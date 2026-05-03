@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E-MASTER Auto-Fill Aktivitas Harian
 // @namespace    https://github.com/kangsotox991/emasterjs
-// @version      1.7.0
+// @version      1.8.0
 // @description  Skrip auto-fill form Aktivitas Harian SKP di Si-MASTER BKD Jatim dengan GUI panel. Login manual, skrip hanya mengisi data form.
 // @author       kangsotox991
 // @match        https://master.bkd.jatimprov.go.id/*
@@ -494,6 +494,7 @@
         <div class="em-tabs">
           <div class="em-tab on" data-t="fill">Isi Form</div>
           <div class="em-tab" data-t="excel">Excel</div>
+          <div class="em-tab" data-t="map">Mapping</div>
           <div class="em-tab" data-t="cfg">Konfigurasi</div>
           <div class="em-tab" data-t="det">Deteksi</div>
         </div>
@@ -536,21 +537,27 @@
           <label class="em-lbl" style="margin-top:12px">Template Tersimpan:</label>
           <div id="em-c-list"></div>
 
-          <hr style="border:none;border-top:1px solid #e0e0e0;margin:12px 0 8px">
-          <label class="em-lbl">Mapping Kata Kunci (Excel → Popup):</label>
-          <small style="font-size:10px;color:#888;display:block;margin-bottom:6px">
-            Setiap aktivitas di Excel bisa punya beberapa kata kunci pencarian di popup.<br>
-            Tiap kata kunci = 1x isi form.
-          </small>
-          <input id="em-m-aktivitas" class="em-inp" placeholder="Nama aktivitas dari Excel (kolom Kegiatan)" />
-          <textarea id="em-m-katakunci" class="em-inp" rows="3" placeholder="Kata kunci popup (1 per baris)&#10;contoh:&#10;Sampling Darah Vena Instalasi&#10;Terapi Injeksi Parenteral"></textarea>
-          <button class="em-btn em-pri" id="em-m-add">Tambah / Update Mapping</button>
-          <div id="em-m-list" style="margin-top:8px"></div>
-
           <div class="em-btngrp" style="margin-top:12px">
             <button class="em-btn em-pri" id="em-c-save">Simpan Konfigurasi</button>
             <button class="em-btn em-dan" id="em-c-reset">Reset Default</button>
           </div>
+        </div>
+
+        <!-- MAPPING KATA KUNCI -->
+        <div class="em-pane" id="em-p-map">
+          <label class="em-lbl">Mapping Kata Kunci (Kegiatan → Popup)</label>
+          <small style="font-size:10px;color:#888;display:block;margin-bottom:8px">
+            Setiap kegiatan di Excel bisa punya beberapa kata kunci pencarian di popup Kamus Aktifitas.<br>
+            Tiap kata kunci = 1x isi form. Contoh: "Melaksanakan tindakan keperawatan tepat waktu" → 3 kata kunci.
+          </small>
+
+          <label class="em-lbl">Tambah / Edit Mapping:</label>
+          <input id="em-m-aktivitas" class="em-inp" placeholder="Nama kegiatan (dari kolom Excel / ketik manual)" />
+          <textarea id="em-m-katakunci" class="em-inp" rows="4" placeholder="Kata kunci pencarian popup (1 per baris)&#10;contoh:&#10;Sampling Darah Vena Instalasi&#10;Terapi Injeksi Parenteral&#10;Pasang Infus"></textarea>
+          <button class="em-btn em-pri" id="em-m-add" style="margin-bottom:10px">Simpan Mapping</button>
+
+          <label class="em-lbl">Mapping Tersimpan:</label>
+          <div id="em-m-list"></div>
         </div>
 
         <!-- EXCEL IMPORT -->
