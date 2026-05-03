@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E-MASTER Auto-Fill Aktivitas Harian
 // @namespace    https://github.com/kangsotox991/emasterjs
-// @version      1.4.0
+// @version      1.5.0
 // @description  Skrip auto-fill form Aktivitas Harian SKP di Si-MASTER BKD Jatim dengan GUI panel. Login manual, skrip hanya mengisi data form.
 // @author       kangsotox991
 // @match        https://master.bkd.jatimprov.go.id/*
@@ -482,17 +482,19 @@
           <label class="em-lbl">Pilih template aktivitas:</label>
           <div id="em-tpl-list"></div>
           <hr style="border:none;border-top:1px solid #e0e0e0;margin:8px 0">
-          <label class="em-lbl">Atau isi manual:</label>
-          <input id="em-kata-manual" class="em-inp" placeholder="Kata kunci pencarian (popup Kamus Aktifitas)" />
+          <label class="em-lbl">Atau isi manual (1 kata kunci per baris):</label>
+          <textarea id="em-kata-manual" class="em-inp" rows="4" placeholder="Kata kunci 1&#10;Kata kunci 2&#10;Kata kunci 3&#10;(satu per baris)"></textarea>
           <div class="em-row">
-            <input id="em-vol-manual" class="em-inp" type="number" placeholder="Volume" value="1" min="1" />
             <input id="em-tanggal" class="em-inp" placeholder="Tanggal (dd/mm/yyyy)" />
+            <input id="em-vol-manual" class="em-inp" type="number" placeholder="Volume" value="1" min="1" />
           </div>
-          <textarea id="em-objek-manual" class="em-inp" rows="2" placeholder="Objek Kerja / Topik (opsional)"></textarea>
-          <small style="font-size:10px;color:#888;display:block;margin-bottom:6px">Jika kata kunci diisi manual, template di atas akan diabaikan</small>
+          <textarea id="em-objek-manual" class="em-inp" rows="2" placeholder="Objek Kerja / Topik (sama untuk semua kata kunci)"></textarea>
+          <small style="font-size:10px;color:#888;display:block;margin-bottom:6px">Setiap klik "Isi Form" = isi 1 kata kunci berikutnya. Tanggal & Objek Kerja tetap sama.</small>
+          <div id="em-kata-progress" style="font-size:11px;color:#1565c0;font-weight:600;margin-bottom:4px;display:none"></div>
           <div class="em-btngrp">
             <button class="em-btn em-pri" id="em-go">Isi Form</button>
             <button class="em-btn em-suc" id="em-go-save">Isi & Save</button>
+            <button class="em-btn em-warn" id="em-kata-reset" style="display:none;font-size:10px">Reset Urutan</button>
           </div>
           <div id="em-status" class="em-msg"></div>
         </div>
@@ -602,6 +604,14 @@
     };
 
     $('#em-det-btn').onclick = renderDetected;
+
+    // Manual kata kunci multi-baris
+    $('#em-kata-manual').addEventListener('input', updateKataProgress);
+    $('#em-kata-reset').onclick = () => {
+      manualKataIdx = 0;
+      updateKataProgress();
+      msg('Urutan kata kunci direset ke awal.', 'i');
+    };
 
     // Excel import
     $('#em-excel-file').onchange = handleExcelFile;
@@ -867,17 +877,53 @@
   // ============================================================
   //  FILL LOGIC
   // ============================================================
+  let manualKataIdx = 0;
+  let lastManualKataList = [];
+
+  function getManualKataList() {
+    const raw = $('#em-kata-manual').value.trim();
+    if (!raw) return [];
+    return raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  }
+
+  function updateKataProgress() {
+    const list = getManualKataList();
+    const prog = $('#em-kata-progress');
+    const resetBtn = $('#em-kata-reset');
+    if (!prog) return;
+
+    if (list.length <= 1) {
+      prog.style.display = 'none';
+      if (resetBtn) resetBtn.style.display = 'none';
+      return;
+    }
+
+    // Reset index if kata list changed
+    const key = list.join('|');
+    const lastKey = lastManualKataList.join('|');
+    if (key !== lastKey) {
+      manualKataIdx = 0;
+      lastManualKataList = list;
+    }
+
+    const idx = Math.min(manualKataIdx, list.length - 1);
+    prog.style.display = 'block';
+    prog.textContent = `Kata kunci ${idx + 1} / ${list.length}: "${list[idx]}"'`;
+    if (resetBtn) resetBtn.style.display = 'inline-block';
+  }
+
   async function doFill(autoSave) {
-    const manualKata = $('#em-kata-manual').value.trim();
+    const kataList = getManualKataList();
     const manualVol = $('#em-vol-manual').value.trim();
     const manualObjek = $('#em-objek-manual').value.trim();
     const tglInput = $('#em-tanggal').value.trim();
 
     let tpl;
-    if (manualKata) {
+    if (kataList.length > 0) {
       // Input manual — abaikan template
+      const idx = Math.min(manualKataIdx, kataList.length - 1);
       tpl = {
-        kataKunci: manualKata,
+        kataKunci: kataList[idx],
         volume: parseInt(manualVol) || 1,
         objekKerja: manualObjek,
       };
@@ -952,6 +998,15 @@
     }
 
     msg(log.join('\n'), 's');
+
+    // Auto advance ke kata kunci berikutnya jika pakai input manual multi-baris
+    if (kataList.length > 1 && manualKataIdx < kataList.length - 1) {
+      manualKataIdx++;
+      updateKataProgress();
+      msg(log.join('\n') + `\n\nKata kunci berikutnya: "${kataList[manualKataIdx]}" (${manualKataIdx + 1}/${kataList.length})`, 's');
+    } else if (kataList.length > 1 && manualKataIdx >= kataList.length - 1) {
+      msg(log.join('\n') + '\n\nSemua kata kunci sudah diisi!', 's');
+    }
   }
 
   // ============================================================
