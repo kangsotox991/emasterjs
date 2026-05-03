@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E-MASTER Auto-Fill Aktivitas Harian
 // @namespace    https://github.com/kangsotox991/emasterjs
-// @version      1.3.0
+// @version      1.4.0
 // @description  Skrip auto-fill form Aktivitas Harian SKP di Si-MASTER BKD Jatim dengan GUI panel. Login manual, skrip hanya mengisi data form.
 // @author       kangsotox991
 // @match        https://master.bkd.jatimprov.go.id/*
@@ -481,8 +481,15 @@
         <div class="em-pane on" id="em-p-fill">
           <label class="em-lbl">Pilih template aktivitas:</label>
           <div id="em-tpl-list"></div>
-          <label class="em-lbl">Tanggal Aktivitas (kosong = hari ini):</label>
-          <input id="em-tanggal" class="em-inp" placeholder="dd/mm/yyyy" />
+          <hr style="border:none;border-top:1px solid #e0e0e0;margin:8px 0">
+          <label class="em-lbl">Atau isi manual:</label>
+          <input id="em-kata-manual" class="em-inp" placeholder="Kata kunci pencarian (popup Kamus Aktifitas)" />
+          <div class="em-row">
+            <input id="em-vol-manual" class="em-inp" type="number" placeholder="Volume" value="1" min="1" />
+            <input id="em-tanggal" class="em-inp" placeholder="Tanggal (dd/mm/yyyy)" />
+          </div>
+          <textarea id="em-objek-manual" class="em-inp" rows="2" placeholder="Objek Kerja / Topik (opsional)"></textarea>
+          <small style="font-size:10px;color:#888;display:block;margin-bottom:6px">Jika kata kunci diisi manual, template di atas akan diabaikan</small>
           <div class="em-btngrp">
             <button class="em-btn em-pri" id="em-go">Isi Form</button>
             <button class="em-btn em-suc" id="em-go-save">Isi & Save</button>
@@ -861,14 +868,27 @@
   //  FILL LOGIC
   // ============================================================
   async function doFill(autoSave) {
-    const sel = getSelected();
-    if (!sel) {
-      msg('Pilih satu template dulu!', 'w');
-      return;
-    }
-
+    const manualKata = $('#em-kata-manual').value.trim();
+    const manualVol = $('#em-vol-manual').value.trim();
+    const manualObjek = $('#em-objek-manual').value.trim();
     const tglInput = $('#em-tanggal').value.trim();
-    const tpl = { ...sel };
+
+    let tpl;
+    if (manualKata) {
+      // Input manual — abaikan template
+      tpl = {
+        kataKunci: manualKata,
+        volume: parseInt(manualVol) || 1,
+        objekKerja: manualObjek,
+      };
+    } else {
+      const sel = getSelected();
+      if (!sel) {
+        msg('Pilih template atau isi kata kunci manual!', 'w');
+        return;
+      }
+      tpl = { ...sel };
+    }
 
     msg('Mengisi form...', 'i');
     const f = detectFields();
