@@ -10,23 +10,22 @@ Userscript (Tampermonkey / Greasemonkey) untuk mengisi otomatis form **Aktivitas
 
 - **GUI Panel** — panel mengambang yang bisa di-drag, minimize, dan tutup
 - **Template Aktivitas** — simpan template kegiatan yang sering dipakai, pilih lalu klik isi
-- **Detail Aktifitas via Popup** — otomatis klik ikon titik 3, buka popup pencarian, masukkan kata kunci, dan klik hasil
-- **Auto-detect Form** — otomatis mendeteksi field form di halaman
+- **Detail Aktifitas via Popup** — otomatis klik ikon titik 3, buka popup "Kamus Aktifitas Harian", cari kata kunci, dan klik hasil
+- **Auto-detect Form** — otomatis mendeteksi field form dan ikon popup di halaman
 - **Konfigurasi** — tambah/hapus template, atur delay, reset ke default
-- **WPT Tracker** — bar progress WPT harian (target 330–660 menit)
 - **Isi & Save** — opsi untuk langsung klik tombol Save setelah form terisi
 
-## Field Form yang Didukung
+## Field Form
 
-| Field | Keterangan |
+| Field | Cara Pengisian |
 |---|---|
-| Kegiatan Tugas Jabatan | Readonly/prefilled dari sistem |
-| Tanggal Aktivitas | Format dd/mm/yyyy, default hari ini |
-| Detail Aktifitas | **Diisi via popup** — skrip otomatis klik ikon titik 3, cari kata kunci di popup, klik hasil |
-| Satuan | Satuan kerja (Dokumen, Laporan, dst) |
-| WPT | Waktu Penyelesaian Tugas (menit) |
-| Volume | Jumlah volume pekerjaan |
-| Objek Kerja / Topik | Topik/objek pekerjaan |
+| Kegiatan Tugas Jabatan | Readonly — sudah prefilled dari sistem |
+| Tanggal Aktivitas | **Diisi skrip** — default hari ini, bisa override manual |
+| Detail Aktifitas | **Otomatis dari popup** — skrip klik ikon titik 3, cari kata kunci, klik hasil |
+| Satuan | **Otomatis dari popup** — terisi saat klik hasil di Kamus Aktifitas |
+| WPT | **Otomatis dari popup** — terisi saat klik hasil di Kamus Aktifitas |
+| Volume | **Diisi skrip** — dari template |
+| Objek Kerja / Topik | **Diisi skrip** — dari template |
 
 ---
 
@@ -69,35 +68,38 @@ Userscript (Tampermonkey / Greasemonkey) untuk mengisi otomatis form **Aktivitas
 - Klik salah satu template aktivitas (kartu biru)
 - Opsional: isi tanggal manual (format dd/mm/yyyy), kosong = hari ini
 - Klik **Isi Form** → skrip akan:
-  1. Isi Tanggal Aktivitas
-  2. Buka popup Detail Aktifitas (klik ikon titik 3 otomatis)
-  3. Cari kata kunci di popup dan klik hasil
-  4. Isi Satuan, WPT, Volume, Objek Kerja
+  1. Isi **Tanggal Aktivitas**
+  2. Buka popup "Kamus Aktifitas Harian" (klik ikon titik 3 otomatis)
+  3. Cari kata kunci di popup → klik **Cari** → klik hasil pertama
+  4. **Detail Aktifitas, Satuan, WPT** otomatis terisi dari popup
+  5. Isi **Volume** dan **Objek Kerja / Topik** dari template
 - Klik **Isi & Save** untuk mengisi lalu otomatis klik tombol Save
 
 ### Alur Detail Aktifitas (Popup)
-Karena field "Detail Aktifitas" tidak bisa diketik langsung, skrip melakukan:
+Field "Detail Aktifitas", "Satuan", dan "WPT" **tidak bisa diketik langsung** — harus via popup. Skrip otomatis:
 1. Mendeteksi dan klik ikon titik 3 di sebelah field
-2. Menunggu popup `popup_aktifitas.php` terbuka
+2. Menunggu popup "Kamus Aktifitas Harian" terbuka
 3. Mengisi kata kunci pencarian dari template
-4. Klik tombol Cari
+4. Klik tombol **Cari**
 5. Klik hasil pencarian pertama
-6. Popup menutup dan field terisi otomatis
+6. Detail Aktifitas, Satuan, dan WPT terisi otomatis
 
 > Jika popup gagal terbuka (misalnya diblokir pop-up blocker), pastikan pop-up diizinkan untuk `master.bkd.jatimprov.go.id` di browser Anda.
 
 ### Tab "Konfigurasi"
 - Tambah template baru dengan mengisi:
   - **Nama/Label** — nama template
-  - **Kata kunci** — kata kunci untuk pencarian di popup Detail Aktifitas
-  - **Satuan, WPT, Volume, Objek Kerja**
+  - **Kata kunci** — kata kunci pencarian di popup Kamus Aktifitas
+  - **Volume** — jumlah volume pekerjaan
+  - **Objek Kerja / Topik** — topik pekerjaan
+- Detail Aktifitas, Satuan, dan WPT **otomatis** dari popup (tidak perlu diisi di template)
 - Hapus template yang tidak diperlukan
 - Atur delay antar pengisian (default 500ms)
 - Reset ke default jika diperlukan
 
 ### Tab "Deteksi"
 - Klik **Deteksi Ulang** untuk melihat field form apa saja yang terdeteksi di halaman
-- Sekarang juga mendeteksi **Ikon Popup Detail (titik 3)**
+- Mendeteksi juga **Ikon Popup Detail (titik 3)**
 - Hijau = ditemukan, Merah = tidak ditemukan
 - Gunakan ini untuk troubleshoot jika auto-fill tidak bekerja
 
@@ -105,14 +107,14 @@ Karena field "Detail Aktifitas" tidak bisa diketik langsung, skrip melakukan:
 
 ## Template Default
 
-| Template | Kata Kunci | WPT | Volume | Satuan |
-|---|---|---|---|---|
-| Administrasi Surat | administrasi surat | 120 menit | 5 | Dokumen |
-| Menyusun Laporan | menyusun laporan | 90 menit | 1 | Laporan |
-| Rapat Koordinasi | rapat koordinasi | 60 menit | 1 | Kegiatan |
-| Pelayanan Publik | pelayanan | 60 menit | 3 | Orang |
-| Pengelolaan Data | pengelolaan data | 90 menit | 10 | Data |
-| Tindakan Keperawatan | keperawatan | 120 menit | 5 | Pasien |
+| Template | Kata Kunci | Volume | Objek Kerja |
+|---|---|---|---|
+| Administrasi Surat | administrasi surat | 5 | Surat masuk dan surat keluar |
+| Menyusun Laporan | menyusun laporan | 1 | Laporan kegiatan berkala |
+| Rapat Koordinasi | rapat koordinasi | 1 | Rapat internal |
+| Pelayanan Publik | pelayanan | 3 | Pelayanan tamu / masyarakat |
+| Pengelolaan Data | pengelolaan data | 10 | Data kepegawaian |
+| Tindakan Keperawatan | keperawatan | 5 | Pasien rawat inap / rawat jalan |
 
 Template bisa ditambah/dihapus/diubah dari panel Konfigurasi. Data tersimpan di browser (Tampermonkey storage).
 
@@ -123,7 +125,7 @@ Template bisa ditambah/dihapus/diubah dari panel Konfigurasi. Data tersimpan di 
 ### Popup Detail Aktifitas tidak terbuka
 - Pastikan pop-up tidak diblokir browser (izinkan pop-up untuk `master.bkd.jatimprov.go.id`)
 - Cek tab "Deteksi" — pastikan "Ikon Popup Detail (titik 3)" berwarna hijau
-- Jika tetap gagal, isi Detail Aktifitas manual lalu klik "Isi Form" untuk field lainnya
+- Jika tetap gagal, klik ikon titik 3 manual → cari & klik hasil → lalu klik "Isi Form" untuk isi Volume & Objek Kerja
 
 ### Field tidak terdeteksi
 - Pastikan Anda berada di halaman form **Aktivitas Harian** (bukan halaman list)
@@ -135,8 +137,6 @@ Template bisa ditambah/dihapus/diubah dari panel Konfigurasi. Data tersimpan di 
 
 - **Skrip ini TIDAK menyimpan atau mengirimkan data login Anda**
 - Data konfigurasi template tersimpan lokal di browser melalui Tampermonkey storage
-- Pastikan WPT harian minimal 330 menit (5.5 jam) dan maksimal 660 menit (11 jam)
-- Target bulanan: 6750 menit (112.5 jam)
 - Selalu periksa data sebelum klik Save
 
 ## Lisensi

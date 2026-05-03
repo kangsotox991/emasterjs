@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E-MASTER Auto-Fill Aktivitas Harian
 // @namespace    https://github.com/kangsotox991/emasterjs
-// @version      1.1.0
+// @version      1.2.0
 // @description  Skrip auto-fill form Aktivitas Harian SKP di Si-MASTER BKD Jatim dengan GUI panel. Login manual, skrip hanya mengisi data form.
 // @author       kangsotox991
 // @match        https://master.bkd.jatimprov.go.id/*
@@ -19,72 +19,58 @@
   // ============================================================
   //  KONFIGURASI DEFAULT
   //  Field form sesuai halaman "Edit Akfitas" E-MASTER:
-  //    - Tanggal Aktivitas   (format dd/mm/yyyy)
-  //    - Detail Aktifitas    (readonly — diisi via popup popup_aktifitas.php)
-  //    - Satuan              (input text)
-  //    - WPT                 (input number, menit)
-  //    - Volume              (input number)
-  //    - Objek Kerja / Topik (textarea)
+  //    - Tanggal Aktivitas   (isi manual via skrip, format dd/mm/yyyy)
+  //    - Detail Aktifitas    (otomatis via popup Kamus Aktifitas)
+  //    - Satuan              (otomatis dari popup)
+  //    - WPT                 (otomatis dari popup)
+  //    - Volume              (isi manual via skrip)
+  //    - Objek Kerja / Topik (isi manual via skrip)
   //
-  //  "Detail Aktifitas" tidak bisa diketik manual.
-  //  Harus klik ikon titik 3 → buka popup → cari kata kunci → klik hasil.
-  //  Skrip ini otomatis melakukan alur tersebut.
+  //  Klik ikon titik 3 → popup "Kamus Aktifitas Harian" terbuka
+  //  → cari kata kunci → klik hasil → Detail, Satuan, WPT terisi.
+  //  Skrip hanya perlu isi: Tanggal, Volume, dan Objek Kerja.
   // ============================================================
   const DEFAULT_CONFIG = {
     templates: [
       {
         label: 'Administrasi Surat',
         kataKunci: 'administrasi surat',
-        satuan: 'Dokumen',
-        wpt: 120,
         volume: 5,
         objekKerja: 'Surat masuk dan surat keluar',
       },
       {
         label: 'Menyusun Laporan',
         kataKunci: 'menyusun laporan',
-        satuan: 'Laporan',
-        wpt: 90,
         volume: 1,
         objekKerja: 'Laporan kegiatan berkala',
       },
       {
         label: 'Rapat Koordinasi',
         kataKunci: 'rapat koordinasi',
-        satuan: 'Kegiatan',
-        wpt: 60,
         volume: 1,
         objekKerja: 'Rapat internal',
       },
       {
         label: 'Pelayanan Publik',
         kataKunci: 'pelayanan',
-        satuan: 'Orang',
-        wpt: 60,
         volume: 3,
         objekKerja: 'Pelayanan tamu / masyarakat',
       },
       {
         label: 'Pengelolaan Data',
         kataKunci: 'pengelolaan data',
-        satuan: 'Data',
-        wpt: 90,
         volume: 10,
         objekKerja: 'Data kepegawaian',
       },
       {
         label: 'Tindakan Keperawatan',
         kataKunci: 'keperawatan',
-        satuan: 'Pasien',
-        wpt: 120,
         volume: 5,
         objekKerja: 'Pasien rawat inap / rawat jalan',
       },
     ],
     delayMs: 500,
     popupWaitMs: 2000,
-    targetHarianMenit: 330,
-    targetMaksimalMenit: 660,
   };
 
   // ============================================================
@@ -458,8 +444,7 @@
     .em-card-t{font-weight:600;font-size:12px;color:#333}
     .em-card-d{font-size:10px;color:#888;margin-top:2px}
     .em-badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#e3f2fd;color:#1565c0;margin-top:3px;margin-right:3px}
-    .em-bar-wrap{width:100%;height:7px;background:#e0e0e0;border-radius:4px;overflow:hidden;margin:4px 0}
-    .em-bar-fill{height:100%;border-radius:4px;transition:width .3s}
+    
     .em-msg{margin-top:8px;padding:7px;border-radius:5px;font-size:11px;line-height:1.35;white-space:pre-line;display:none}
     .em-msg.i{display:block;background:#e3f2fd;color:#1565c0;border:1px solid #90caf9}
     .em-msg.s{display:block;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7}
@@ -496,9 +481,6 @@
           <div id="em-tpl-list"></div>
           <label class="em-lbl">Tanggal Aktivitas (kosong = hari ini):</label>
           <input id="em-tanggal" class="em-inp" placeholder="dd/mm/yyyy" />
-          <label class="em-lbl">Total WPT terpilih: <b id="em-wpt-total">0</b> menit</label>
-          <div class="em-bar-wrap"><div id="em-bar" class="em-bar-fill" style="width:0%;background:#e65100"></div></div>
-          <small style="font-size:10px;color:#888">Target: ${config.targetHarianMenit}-${config.targetMaksimalMenit} mnt/hari</small>
           <div class="em-btngrp">
             <button class="em-btn em-pri" id="em-go">Isi Form</button>
             <button class="em-btn em-suc" id="em-go-save">Isi & Save</button>
@@ -510,16 +492,13 @@
         <div class="em-pane" id="em-p-cfg">
           <label class="em-lbl">Tambah Template:</label>
           <input id="em-c-label" class="em-inp" placeholder="Nama / Label template" />
-          <input id="em-c-kata" class="em-inp" placeholder="Kata kunci pencarian Detail Aktifitas" />
-          <div class="em-row">
-            <input id="em-c-satuan" class="em-inp" placeholder="Satuan" />
-            <input id="em-c-wpt" class="em-inp" type="number" placeholder="WPT (menit)" value="60" min="1" />
-          </div>
+          <input id="em-c-kata" class="em-inp" placeholder="Kata kunci pencarian di popup Kamus Aktifitas" />
           <div class="em-row">
             <input id="em-c-vol" class="em-inp" type="number" placeholder="Volume" value="1" min="1" />
             <input id="em-c-delay" class="em-inp" type="number" placeholder="Delay (ms)" value="${config.delayMs}" min="100" />
           </div>
           <textarea id="em-c-objek" class="em-inp" rows="2" placeholder="Objek Kerja / Topik"></textarea>
+          <small style="font-size:10px;color:#888;display:block;margin-bottom:6px">Detail Aktifitas, Satuan, dan WPT otomatis terisi dari popup Kamus Aktifitas</small>
           <button class="em-btn em-pri" id="em-c-add">Tambah</button>
 
           <label class="em-lbl" style="margin-top:12px">Template Tersimpan:</label>
@@ -628,39 +607,27 @@
       await waitMs(config.delayMs);
     }
 
-    // 2. Detail Aktifitas — via popup
+    // 2. Detail Aktifitas — via popup (juga mengisi Satuan dan WPT otomatis)
     if (tpl.kataKunci) {
-      msg('Mengisi form...\nMembuka popup Detail Aktifitas...', 'i');
+      msg('Mengisi form...\nMembuka popup Kamus Aktifitas...', 'i');
       const popupResult = await fillDetailViaPopup(tpl.kataKunci);
       log.push(popupResult.msg);
-      if (!popupResult.ok) {
-        log.push('Tip: Isi Detail Aktifitas manual, lalu klik "Isi Form" lagi untuk field lainnya');
+      if (popupResult.ok) {
+        log.push('Detail Aktifitas, Satuan, WPT → terisi dari Kamus Aktifitas');
+      } else {
+        log.push('Tip: Klik ikon titik 3 manual → cari & klik hasil → lalu klik "Isi Form" lagi untuk Volume & Objek Kerja');
       }
       await waitMs(config.delayMs);
     }
 
-    // 3. Satuan
-    if (f.satuan) {
-      setVal(f.satuan, tpl.satuan);
-      log.push(`Satuan: ${tpl.satuan}`);
-      await waitMs(config.delayMs);
-    }
-
-    // 4. WPT
-    if (f.wpt) {
-      setVal(f.wpt, String(tpl.wpt));
-      log.push(`WPT: ${tpl.wpt} menit`);
-      await waitMs(config.delayMs);
-    }
-
-    // 5. Volume
+    // 3. Volume (isi manual)
     if (f.volume) {
       setVal(f.volume, String(tpl.volume));
       log.push(`Volume: ${tpl.volume}`);
       await waitMs(config.delayMs);
     }
 
-    // 6. Objek Kerja / Topik
+    // 4. Objek Kerja / Topik
     if (f.objekKerja) {
       setVal(f.objekKerja, tpl.objekKerja);
       log.push(`Objek Kerja: ${tpl.objekKerja}`);
@@ -672,7 +639,7 @@
       return;
     }
 
-    // 7. Save
+    // 5. Save
     if (autoSave && f.saveBtn) {
       f.saveBtn.click();
       log.push('Tombol Save diklik!');
@@ -694,10 +661,9 @@
         (t, i) => `
       <div class="em-card" data-i="${i}">
         <div class="em-card-t">${esc(t.label)}</div>
-        <div class="em-card-d">Kata kunci: "${esc(t.kataKunci)}"</div>
-        <span class="em-badge">${t.wpt} mnt</span>
+        <div class="em-card-d">Cari: "${esc(t.kataKunci)}"</div>
         <span class="em-badge">Vol ${t.volume}</span>
-        <span class="em-badge">${esc(t.satuan)}</span>
+        <span class="em-badge">${esc(t.objekKerja)}</span>
       </div>`
       )
       .join('');
@@ -718,7 +684,7 @@
       .map(
         (t, i) => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border:1px solid #e0e0e0;border-radius:4px;margin-bottom:3px;font-size:11px">
-        <span>${esc(t.label)} (${t.wpt}m, vol ${t.volume})</span>
+        <span>${esc(t.label)} (vol ${t.volume})</span>
         <button class="em-del" data-i="${i}" title="Hapus">&times;</button>
       </div>`
       )
@@ -742,10 +708,10 @@
     const map = {
       kegiatan: 'Kegiatan Tugas Jabatan',
       tanggal: 'Tanggal Aktivitas',
-      detail: 'Detail Aktifitas (readonly)',
+      detail: 'Detail Aktifitas (dari popup)',
       popupTrigger: 'Ikon Popup Detail (titik 3)',
-      satuan: 'Satuan',
-      wpt: 'WPT',
+      satuan: 'Satuan (dari popup)',
+      wpt: 'WPT (dari popup)',
       volume: 'Volume',
       objekKerja: 'Objek Kerja / Topik',
       saveBtn: 'Tombol Save',
@@ -774,25 +740,12 @@
   }
 
   function updateBar() {
-    const sel = getSelected();
-    const total = sel ? sel.wpt : 0;
-    $('#em-wpt-total').textContent = total;
-    const pct = Math.min((total / config.targetHarianMenit) * 100, 100);
-    const bar = $('#em-bar');
-    bar.style.width = pct + '%';
-    bar.style.background =
-      total < config.targetHarianMenit
-        ? '#e65100'
-        : total <= config.targetMaksimalMenit
-          ? '#2e7d32'
-          : '#c62828';
+    // WPT bar dihapus karena WPT otomatis dari popup
   }
 
   function addTemplate() {
     const label = $('#em-c-label').value.trim();
     const kataKunci = $('#em-c-kata').value.trim();
-    const satuan = $('#em-c-satuan').value.trim() || 'Kegiatan';
-    const wpt = parseInt($('#em-c-wpt').value) || 60;
     const vol = parseInt($('#em-c-vol').value) || 1;
     const objek = $('#em-c-objek').value.trim();
 
@@ -808,8 +761,6 @@
     config.templates.push({
       label,
       kataKunci,
-      satuan,
-      wpt,
       volume: vol,
       objekKerja: objek || label,
     });
@@ -817,8 +768,6 @@
 
     $('#em-c-label').value = '';
     $('#em-c-kata').value = '';
-    $('#em-c-satuan').value = '';
-    $('#em-c-wpt').value = '60';
     $('#em-c-vol').value = '1';
     $('#em-c-objek').value = '';
 
