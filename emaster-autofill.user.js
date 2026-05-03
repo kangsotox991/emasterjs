@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E-MASTER Auto-Fill Aktivitas Harian
 // @namespace    https://github.com/kangsotox991/emasterjs
-// @version      1.6.0
+// @version      1.7.0
 // @description  Skrip auto-fill form Aktivitas Harian SKP di Si-MASTER BKD Jatim dengan GUI panel. Login manual, skrip hanya mengisi data form.
 // @author       kangsotox991
 // @match        https://master.bkd.jatimprov.go.id/*
@@ -72,6 +72,27 @@
     ],
     delayMs: 500,
     popupWaitMs: 2000,
+    kataKunciMap: {
+      'Melaksanakan asuhan keperawatan sesuai SOP': [
+        'Asuhan Keperawatan',
+      ],
+      'Menginput dokumentasi tindakan keperawatan': [
+        'Dokumentasi Keperawatan',
+      ],
+      'Melaksanakan tindakan keperawatan tepat waktu': [
+        'Sampling Darah Vena Instalasi',
+        'Terapi Injeksi Parenteral',
+        'Pasang Infus',
+      ],
+      'Melaksanakan prosedur keperawatan sesuai SOP': [
+        'Sampling Darah Vena Instalasi',
+        'Terapi Injeksi Parenteral',
+        'Pasang Infus',
+      ],
+      'Menyiapkan alat medis pelayanan': [
+        'Menyiapkan Alat Medis',
+      ],
+    },
   };
 
   // ============================================================
@@ -514,7 +535,19 @@
 
           <label class="em-lbl" style="margin-top:12px">Template Tersimpan:</label>
           <div id="em-c-list"></div>
-          <div class="em-btngrp">
+
+          <hr style="border:none;border-top:1px solid #e0e0e0;margin:12px 0 8px">
+          <label class="em-lbl">Mapping Kata Kunci (Excel → Popup):</label>
+          <small style="font-size:10px;color:#888;display:block;margin-bottom:6px">
+            Setiap aktivitas di Excel bisa punya beberapa kata kunci pencarian di popup.<br>
+            Tiap kata kunci = 1x isi form.
+          </small>
+          <input id="em-m-aktivitas" class="em-inp" placeholder="Nama aktivitas dari Excel (kolom Kegiatan)" />
+          <textarea id="em-m-katakunci" class="em-inp" rows="3" placeholder="Kata kunci popup (1 per baris)&#10;contoh:&#10;Sampling Darah Vena Instalasi&#10;Terapi Injeksi Parenteral"></textarea>
+          <button class="em-btn em-pri" id="em-m-add">Tambah / Update Mapping</button>
+          <div id="em-m-list" style="margin-top:8px"></div>
+
+          <div class="em-btngrp" style="margin-top:12px">
             <button class="em-btn em-pri" id="em-c-save">Simpan Konfigurasi</button>
             <button class="em-btn em-dan" id="em-c-reset">Reset Default</button>
           </div>
@@ -563,6 +596,7 @@
     bindEvents();
     renderTemplates();
     renderSavedList();
+    renderMappingList();
     makeDraggable();
   }
 
@@ -595,17 +629,19 @@
     $('#em-go-save').onclick = () => doFill(true);
 
     $('#em-c-add').onclick = addTemplate;
+    $('#em-m-add').onclick = addMapping;
     $('#em-c-save').onclick = () => {
       config.delayMs = parseInt($('#em-c-delay').value) || 500;
       saveConfig(config);
       msg('Konfigurasi disimpan!', 's');
     };
     $('#em-c-reset').onclick = () => {
-      if (!confirm('Reset semua template ke default?')) return;
+      if (!confirm('Reset semua template dan mapping ke default?')) return;
       config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
       saveConfig(config);
       renderTemplates();
       renderSavedList();
+      renderMappingList();
       msg('Reset ke default.', 'i');
     };
 
@@ -661,10 +697,13 @@
   function loadExcelData() {
     if (!excelRawJson) return;
 
-    excelData = parseExcelRows(excelRawJson);
+    const rawRows = parseExcelRows(excelRawJson);
+
+    // Expand rows berdasarkan mapping kata kunci
+    excelData = expandWithMapping(rawRows);
 
     if (excelData.length === 0) {
-      excelMsg('Tidak ada data ditemukan (cek filter No).', 'e');
+      excelMsg('Tidak ada data ditemukan (cek filter No / mapping).', 'e');
       $('#em-excel-fill').disabled = true;
       $('#em-excel-fill-save').disabled = true;
       $('#em-excel-preview').innerHTML = '';
@@ -678,10 +717,48 @@
 
     const noDari = parseInt($('#em-excel-no-dari')?.value) || 1;
     const noSampai = parseInt($('#em-excel-no-sampai')?.value) || 999;
-    excelMsg(`${excelData.length} baris (No ${noDari}-${noSampai}). Siap isi form.`, 's');
+    excelMsg(`${excelData.length} item (No ${noDari}-${noSampai}, sudah di-expand dari mapping). Siap isi form.`, 's');
 
     $('#em-excel-fill').disabled = false;
     $('#em-excel-fill-save').disabled = false;
+  }
+
+  function expandWithMapping(rows) {
+    const map = config.kataKunciMap || {};
+    const result = [];
+
+    for (const row of rows) {
+      // Cari mapping berdasarkan nama kegiatan dari Excel
+      const kegiatan = row.kataKunci;
+      let matched = false;
+
+      for (const [aktivitas, kataList] of Object.entries(map)) {
+        if (kegiatan.toLowerCase().includes(aktivitas.toLowerCase()) ||
+            aktivitas.toLowerCase().includes(kegiatan.toLowerCase())) {
+          // Expand: 1 Excel row → N items (1 per kata kunci)
+          for (const kata of kataList) {
+            result.push({
+              ...row,
+              kataKunciPopup: kata,
+              aktivitasExcel: kegiatan,
+            });
+          }
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        // Tidak ada mapping → pakai nama kegiatan Excel langsung sebagai kata kunci
+        result.push({
+          ...row,
+          kataKunciPopup: kegiatan,
+          aktivitasExcel: kegiatan,
+        });
+      }
+    }
+
+    return result;
   }
 
   function reloadExcelWithFilter() {
@@ -815,18 +892,18 @@
 
     let html =
       '<table style="width:100%;border-collapse:collapse;font-size:10px">' +
-      '<tr style="background:#1565c0;color:#fff"><th style="padding:3px">#</th><th style="padding:3px">No</th><th style="padding:3px">Tgl</th><th style="padding:3px">Kegiatan</th><th style="padding:3px">Vol</th></tr>';
+      '<tr style="background:#1565c0;color:#fff"><th style="padding:3px">#</th><th style="padding:3px">Tgl</th><th style="padding:3px">Kata Kunci Popup</th><th style="padding:3px">Vol</th></tr>';
 
     for (let i = start; i < end; i++) {
       const d = excelData[i];
       const isCurrent = i === excelRowIdx;
       const bg = isCurrent ? '#e3f2fd;font-weight:700' : i % 2 === 0 ? '#fafafa' : '#fff';
       const arrow = isCurrent ? '&#9654; ' : '';
+      const popup = d.kataKunciPopup || d.kataKunci;
       html += `<tr style="background:${bg}">
         <td style="padding:2px 4px;border:1px solid #e0e0e0">${arrow}${i + 1}</td>
-        <td style="padding:2px 4px;border:1px solid #e0e0e0">${d.no || ''}</td>
         <td style="padding:2px 4px;border:1px solid #e0e0e0">${esc(d.tanggal)}</td>
-        <td style="padding:2px 4px;border:1px solid #e0e0e0">${esc(d.kataKunci.substring(0, 30))}${d.kataKunci.length > 30 ? '...' : ''}</td>
+        <td style="padding:2px 4px;border:1px solid #e0e0e0">${esc(popup.substring(0, 35))}${popup.length > 35 ? '...' : ''}</td>
         <td style="padding:2px 4px;border:1px solid #e0e0e0">${d.volume}</td>
       </tr>`;
     }
@@ -876,10 +953,11 @@
       await waitMs(config.delayMs);
     }
 
-    // 2. Detail Aktifitas via popup (kata kunci dari kolom Kegiatan)
-    if (row.kataKunci) {
-      excelMsg(`Baris ${excelRowIdx + 1}: Membuka popup...`, 'i');
-      const popupResult = await fillDetailViaPopup(row.kataKunci);
+    // 2. Detail Aktifitas via popup (kata kunci dari mapping atau Excel)
+    const kataPopup = row.kataKunciPopup || row.kataKunci;
+    if (kataPopup) {
+      excelMsg(`Item ${excelRowIdx + 1}: Popup → "${kataPopup}"...`, 'i');
+      const popupResult = await fillDetailViaPopup(kataPopup);
       log.push(popupResult.msg);
       if (popupResult.ok) {
         log.push('Detail, Satuan, WPT \u2192 terisi dari Kamus Aktifitas');
@@ -1186,6 +1264,82 @@
     renderTemplates();
     renderSavedList();
     msg(`Template "${label}" ditambahkan!`, 's');
+  }
+
+  function addMapping() {
+    const aktivitas = $('#em-m-aktivitas').value.trim();
+    const kataRaw = $('#em-m-katakunci').value.trim();
+
+    if (!aktivitas) {
+      msg('Nama aktivitas harus diisi!', 'w');
+      return;
+    }
+    if (!kataRaw) {
+      msg('Kata kunci harus diisi (minimal 1 baris)!', 'w');
+      return;
+    }
+
+    const kataList = kataRaw.split('\n').map((s) => s.trim()).filter(Boolean);
+    if (kataList.length === 0) {
+      msg('Kata kunci tidak boleh kosong!', 'w');
+      return;
+    }
+
+    if (!config.kataKunciMap) config.kataKunciMap = {};
+    config.kataKunciMap[aktivitas] = kataList;
+    saveConfig(config);
+
+    $('#em-m-aktivitas').value = '';
+    $('#em-m-katakunci').value = '';
+
+    renderMappingList();
+    msg(`Mapping "${aktivitas}" → ${kataList.length} kata kunci disimpan!`, 's');
+  }
+
+  function renderMappingList() {
+    const box = $('#em-m-list');
+    if (!box) return;
+    const map = config.kataKunciMap || {};
+    const entries = Object.entries(map);
+
+    if (entries.length === 0) {
+      box.innerHTML = '<div style="font-size:10px;color:#888;padding:4px">Belum ada mapping.</div>';
+      return;
+    }
+
+    box.innerHTML = entries
+      .map(
+        ([aktivitas, kataList], i) => `
+      <div style="border:1px solid #e0e0e0;border-radius:4px;padding:6px;margin-bottom:4px;font-size:10px">
+        <div style="font-weight:600;color:#333;margin-bottom:2px">${esc(aktivitas)}</div>
+        <div style="color:#1565c0">${kataList.map((k) => '• ' + esc(k)).join('<br>')}</div>
+        <div style="margin-top:3px">
+          <button class="em-m-edit" data-key="${esc(aktivitas)}" style="font-size:9px;cursor:pointer;color:#1565c0;background:none;border:none;padding:0;text-decoration:underline">Edit</button>
+          <button class="em-m-del" data-key="${esc(aktivitas)}" style="font-size:9px;cursor:pointer;color:#c62828;background:none;border:none;padding:0;text-decoration:underline;margin-left:8px">Hapus</button>
+        </div>
+      </div>`
+      )
+      .join('');
+
+    $$('.em-m-del', box).forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.key;
+        if (confirm(`Hapus mapping "${key}"?`)) {
+          delete config.kataKunciMap[key];
+          saveConfig(config);
+          renderMappingList();
+        }
+      })
+    );
+
+    $$('.em-m-edit', box).forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.key;
+        const kataList = config.kataKunciMap[key] || [];
+        $('#em-m-aktivitas').value = key;
+        $('#em-m-katakunci').value = kataList.join('\n');
+      })
+    );
   }
 
   function msg(text, type) {
