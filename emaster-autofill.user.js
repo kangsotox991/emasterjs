@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E-MASTER Auto-Fill Aktivitas Harian
 // @namespace    https://github.com/kangsotox991/emasterjs
-// @version      1.5.0
+// @version      1.6.0
 // @description  Skrip auto-fill form Aktivitas Harian SKP di Si-MASTER BKD Jatim dengan GUI panel. Login manual, skrip hanya mengisi data form.
 // @author       kangsotox991
 // @match        https://master.bkd.jatimprov.go.id/*
@@ -524,10 +524,16 @@
         <div class="em-pane" id="em-p-excel">
           <label class="em-lbl">Import data dari Excel (.xlsx / .csv):</label>
           <input type="file" id="em-excel-file" accept=".xlsx,.xls,.csv" class="em-inp" style="padding:4px" />
-          <small style="font-size:10px;color:#888;display:block;margin-bottom:6px">
-            Format kolom: <b>Tanggal</b> | <b>Kata Kunci</b> | <b>Volume</b> | <b>Objek Kerja</b><br>
-            Contoh: 01/05/2026 | keperawatan | 5 | Pasien rawat inap
+          <small style="font-size:10px;color:#888;display:block;margin-bottom:4px">
+            Kolom: No | Tanggal | Kegiatan Tugas Jabatan | Obyek Kerja | Volume
           </small>
+          <div class="em-row" style="margin-bottom:6px">
+            <label style="font-size:10px;color:#555;white-space:nowrap;margin-right:4px">Filter No:</label>
+            <input id="em-excel-no-dari" class="em-inp" type="number" placeholder="Dari" value="3" min="1" style="width:50px" />
+            <span style="font-size:10px;color:#888;margin:0 2px">s/d</span>
+            <input id="em-excel-no-sampai" class="em-inp" type="number" placeholder="Sampai" value="7" min="1" style="width:50px" />
+            <button class="em-btn em-pri" id="em-excel-reload" style="font-size:10px;padding:3px 8px;margin-left:4px">Reload</button>
+          </div>
           <div id="em-excel-preview" style="max-height:200px;overflow-y:auto;margin-bottom:8px"></div>
           <div id="em-excel-info" style="font-size:11px;color:#555;margin-bottom:6px"></div>
           <div class="em-btngrp">
@@ -619,6 +625,7 @@
     $('#em-excel-fill-save').onclick = () => doFillExcelRow(true);
     $('#em-excel-prev').onclick = () => navigateExcelRow(-1);
     $('#em-excel-next').onclick = () => navigateExcelRow(1);
+    $('#em-excel-reload').onclick = reloadExcelWithFilter;
   }
 
   // ============================================================
@@ -629,6 +636,7 @@
   // ============================================================
   let excelData = [];
   let excelRowIdx = 0;
+  let excelRawJson = null;
 
   function handleExcelFile(e) {
     const file = e.target.files[0];
@@ -640,27 +648,48 @@
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: 'array', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        excelRawJson = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-        excelData = parseExcelRows(json);
-
-        if (excelData.length === 0) {
-          excelMsg('Tidak ada data yang bisa diparsing dari file ini.', 'e');
-          return;
-        }
-
-        excelRowIdx = 0;
-        renderExcelPreview();
-        updateExcelNav();
-        excelMsg(`${excelData.length} baris data ditemukan. Siap isi form.`, 's');
-
-        $('#em-excel-fill').disabled = false;
-        $('#em-excel-fill-save').disabled = false;
+        loadExcelData();
       } catch (err) {
         excelMsg(`Error membaca file: ${err.message}`, 'e');
       }
     };
     reader.readAsArrayBuffer(file);
+  }
+
+  function loadExcelData() {
+    if (!excelRawJson) return;
+
+    excelData = parseExcelRows(excelRawJson);
+
+    if (excelData.length === 0) {
+      excelMsg('Tidak ada data ditemukan (cek filter No).', 'e');
+      $('#em-excel-fill').disabled = true;
+      $('#em-excel-fill-save').disabled = true;
+      $('#em-excel-preview').innerHTML = '';
+      $('#em-excel-pos').textContent = '';
+      return;
+    }
+
+    excelRowIdx = 0;
+    renderExcelPreview();
+    updateExcelNav();
+
+    const noDari = parseInt($('#em-excel-no-dari')?.value) || 1;
+    const noSampai = parseInt($('#em-excel-no-sampai')?.value) || 999;
+    excelMsg(`${excelData.length} baris (No ${noDari}-${noSampai}). Siap isi form.`, 's');
+
+    $('#em-excel-fill').disabled = false;
+    $('#em-excel-fill-save').disabled = false;
+  }
+
+  function reloadExcelWithFilter() {
+    if (!excelRawJson) {
+      excelMsg('Upload file Excel dulu.', 'w');
+      return;
+    }
+    loadExcelData();
   }
 
   function parseExcelRows(json) {
@@ -677,6 +706,7 @@
       if (hasKegiatan && (hasTanggal || hasVolume)) {
         headerIdx = i;
         for (let j = 0; j < row.length; j++) {
+          if (row[j] === 'no' || row[j] === 'no.') colMap.no = j;
           if (row[j].includes('tanggal')) colMap.tanggal = j;
           if (row[j].includes('kegiatan')) colMap.kegiatan = j;
           if (row[j].includes('obyek') || row[j].includes('objek') || row[j].includes('topik'))
@@ -692,6 +722,7 @@
       headerIdx = 0;
       const row = json[0].map((c) => String(c || '').toLowerCase().trim());
       for (let j = 0; j < row.length; j++) {
+        if (row[j] === 'no' || row[j] === 'no.') colMap.no = j;
         if (row[j].includes('tanggal')) colMap.tanggal = j;
         if (row[j].includes('kegiatan') || row[j].includes('kata kunci') || row[j].includes('aktifitas'))
           colMap.kegiatan = j;
@@ -704,6 +735,10 @@
     // Kolom kegiatan wajib ada
     if (colMap.kegiatan === undefined) return [];
 
+    // Filter No: ambil dari input GUI atau default 3-7
+    const noDari = parseInt($('#em-excel-no-dari')?.value) || 1;
+    const noSampai = parseInt($('#em-excel-no-sampai')?.value) || 999;
+
     const result = [];
     let lastTanggal = '';
 
@@ -711,6 +746,22 @@
       const row = json[i];
       const kegiatan = String(row[colMap.kegiatan] || '').trim();
       if (!kegiatan) continue;
+
+      // Filter berdasarkan kolom No
+      if (colMap.no !== undefined) {
+        const noVal = parseInt(row[colMap.no]);
+        if (!isNaN(noVal) && (noVal < noDari || noVal > noSampai)) {
+          // Tetap update tanggal walau baris diskip
+          if (colMap.tanggal !== undefined) {
+            const rawTgl = row[colMap.tanggal];
+            if (rawTgl) {
+              const tgl = formatTanggal(rawTgl);
+              if (tgl) lastTanggal = tgl;
+            }
+          }
+          continue;
+        }
+      }
 
       // Parse tanggal
       let tgl = '';
@@ -723,11 +774,12 @@
       }
       if (!tgl) tgl = lastTanggal;
 
+      const noVal = colMap.no !== undefined ? parseInt(row[colMap.no]) || '' : '';
       const volume = colMap.volume !== undefined ? parseInt(row[colMap.volume]) || 1 : 1;
       const objekKerja =
         colMap.objekKerja !== undefined ? String(row[colMap.objekKerja] || '').trim() : '';
 
-      result.push({ tanggal: tgl, kataKunci: kegiatan, volume, objekKerja });
+      result.push({ no: noVal, tanggal: tgl, kataKunci: kegiatan, volume, objekKerja });
     }
 
     return result;
@@ -763,7 +815,7 @@
 
     let html =
       '<table style="width:100%;border-collapse:collapse;font-size:10px">' +
-      '<tr style="background:#1565c0;color:#fff"><th style="padding:3px">No</th><th style="padding:3px">Tanggal</th><th style="padding:3px">Kegiatan</th><th style="padding:3px">Vol</th></tr>';
+      '<tr style="background:#1565c0;color:#fff"><th style="padding:3px">#</th><th style="padding:3px">No</th><th style="padding:3px">Tgl</th><th style="padding:3px">Kegiatan</th><th style="padding:3px">Vol</th></tr>';
 
     for (let i = start; i < end; i++) {
       const d = excelData[i];
@@ -772,8 +824,9 @@
       const arrow = isCurrent ? '&#9654; ' : '';
       html += `<tr style="background:${bg}">
         <td style="padding:2px 4px;border:1px solid #e0e0e0">${arrow}${i + 1}</td>
+        <td style="padding:2px 4px;border:1px solid #e0e0e0">${d.no || ''}</td>
         <td style="padding:2px 4px;border:1px solid #e0e0e0">${esc(d.tanggal)}</td>
-        <td style="padding:2px 4px;border:1px solid #e0e0e0">${esc(d.kataKunci.substring(0, 35))}${d.kataKunci.length > 35 ? '...' : ''}</td>
+        <td style="padding:2px 4px;border:1px solid #e0e0e0">${esc(d.kataKunci.substring(0, 30))}${d.kataKunci.length > 30 ? '...' : ''}</td>
         <td style="padding:2px 4px;border:1px solid #e0e0e0">${d.volume}</td>
       </tr>`;
     }
