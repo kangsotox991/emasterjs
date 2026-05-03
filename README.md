@@ -10,7 +10,8 @@ Userscript (Tampermonkey / Greasemonkey) untuk mengisi otomatis form **Aktivitas
 
 - **GUI Panel** — panel mengambang yang bisa di-drag, minimize, dan tutup
 - **Template Aktivitas** — simpan template kegiatan yang sering dipakai, pilih lalu klik isi
-- **Auto-detect Form** — otomatis mendeteksi field form di halaman (Tanggal, Detail, Satuan, WPT, Volume, Objek Kerja)
+- **Detail Aktifitas via Popup** — otomatis klik ikon titik 3, buka popup pencarian, masukkan kata kunci, dan klik hasil
+- **Auto-detect Form** — otomatis mendeteksi field form di halaman
 - **Konfigurasi** — tambah/hapus template, atur delay, reset ke default
 - **WPT Tracker** — bar progress WPT harian (target 330–660 menit)
 - **Isi & Save** — opsi untuk langsung klik tombol Save setelah form terisi
@@ -21,7 +22,7 @@ Userscript (Tampermonkey / Greasemonkey) untuk mengisi otomatis form **Aktivitas
 |---|---|
 | Kegiatan Tugas Jabatan | Readonly/prefilled dari sistem |
 | Tanggal Aktivitas | Format dd/mm/yyyy, default hari ini |
-| Detail Aktifitas | Deskripsi kegiatan |
+| Detail Aktifitas | **Diisi via popup** — skrip otomatis klik ikon titik 3, cari kata kunci di popup, klik hasil |
 | Satuan | Satuan kerja (Dokumen, Laporan, dst) |
 | WPT | Waktu Penyelesaian Tugas (menit) |
 | Volume | Jumlah volume pekerjaan |
@@ -67,17 +68,36 @@ Userscript (Tampermonkey / Greasemonkey) untuk mengisi otomatis form **Aktivitas
 ### Tab "Isi Form"
 - Klik salah satu template aktivitas (kartu biru)
 - Opsional: isi tanggal manual (format dd/mm/yyyy), kosong = hari ini
-- Klik **Isi Form** untuk mengisi field saja
+- Klik **Isi Form** → skrip akan:
+  1. Isi Tanggal Aktivitas
+  2. Buka popup Detail Aktifitas (klik ikon titik 3 otomatis)
+  3. Cari kata kunci di popup dan klik hasil
+  4. Isi Satuan, WPT, Volume, Objek Kerja
 - Klik **Isi & Save** untuk mengisi lalu otomatis klik tombol Save
 
+### Alur Detail Aktifitas (Popup)
+Karena field "Detail Aktifitas" tidak bisa diketik langsung, skrip melakukan:
+1. Mendeteksi dan klik ikon titik 3 di sebelah field
+2. Menunggu popup `popup_aktifitas.php` terbuka
+3. Mengisi kata kunci pencarian dari template
+4. Klik tombol Cari
+5. Klik hasil pencarian pertama
+6. Popup menutup dan field terisi otomatis
+
+> Jika popup gagal terbuka (misalnya diblokir pop-up blocker), pastikan pop-up diizinkan untuk `master.bkd.jatimprov.go.id` di browser Anda.
+
 ### Tab "Konfigurasi"
-- Tambah template baru dengan mengisi nama, detail, satuan, WPT, volume, dan objek kerja
+- Tambah template baru dengan mengisi:
+  - **Nama/Label** — nama template
+  - **Kata kunci** — kata kunci untuk pencarian di popup Detail Aktifitas
+  - **Satuan, WPT, Volume, Objek Kerja**
 - Hapus template yang tidak diperlukan
-- Atur delay antar pengisian (default 300ms)
+- Atur delay antar pengisian (default 500ms)
 - Reset ke default jika diperlukan
 
 ### Tab "Deteksi"
 - Klik **Deteksi Ulang** untuk melihat field form apa saja yang terdeteksi di halaman
+- Sekarang juga mendeteksi **Ikon Popup Detail (titik 3)**
 - Hijau = ditemukan, Merah = tidak ditemukan
 - Gunakan ini untuk troubleshoot jika auto-fill tidak bekerja
 
@@ -85,16 +105,29 @@ Userscript (Tampermonkey / Greasemonkey) untuk mengisi otomatis form **Aktivitas
 
 ## Template Default
 
-| Template | WPT | Volume | Satuan |
-|---|---|---|---|
-| Administrasi Surat | 120 menit | 5 | Dokumen |
-| Menyusun Laporan | 90 menit | 1 | Laporan |
-| Rapat Koordinasi | 60 menit | 1 | Kegiatan |
-| Pelayanan Publik | 60 menit | 3 | Orang |
-| Pengelolaan Data | 90 menit | 10 | Data |
-| Tindakan Keperawatan | 120 menit | 5 | Pasien |
+| Template | Kata Kunci | WPT | Volume | Satuan |
+|---|---|---|---|---|
+| Administrasi Surat | administrasi surat | 120 menit | 5 | Dokumen |
+| Menyusun Laporan | menyusun laporan | 90 menit | 1 | Laporan |
+| Rapat Koordinasi | rapat koordinasi | 60 menit | 1 | Kegiatan |
+| Pelayanan Publik | pelayanan | 60 menit | 3 | Orang |
+| Pengelolaan Data | pengelolaan data | 90 menit | 10 | Data |
+| Tindakan Keperawatan | keperawatan | 120 menit | 5 | Pasien |
 
 Template bisa ditambah/dihapus/diubah dari panel Konfigurasi. Data tersimpan di browser (Tampermonkey storage).
+
+---
+
+## Troubleshooting
+
+### Popup Detail Aktifitas tidak terbuka
+- Pastikan pop-up tidak diblokir browser (izinkan pop-up untuk `master.bkd.jatimprov.go.id`)
+- Cek tab "Deteksi" — pastikan "Ikon Popup Detail (titik 3)" berwarna hijau
+- Jika tetap gagal, isi Detail Aktifitas manual lalu klik "Isi Form" untuk field lainnya
+
+### Field tidak terdeteksi
+- Pastikan Anda berada di halaman form **Aktivitas Harian** (bukan halaman list)
+- Gunakan tab "Deteksi" → "Deteksi Ulang" untuk melihat field mana yang ditemukan
 
 ---
 

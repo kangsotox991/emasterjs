@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E-MASTER Auto-Fill Aktivitas Harian
 // @namespace    https://github.com/kangsotox991/emasterjs
-// @version      1.0.0
+// @version      1.1.0
 // @description  Skrip auto-fill form Aktivitas Harian SKP di Si-MASTER BKD Jatim dengan GUI panel. Login manual, skrip hanya mengisi data form.
 // @author       kangsotox991
 // @match        https://master.bkd.jatimprov.go.id/*
@@ -19,18 +19,22 @@
   // ============================================================
   //  KONFIGURASI DEFAULT
   //  Field form sesuai halaman "Edit Akfitas" E-MASTER:
-  //    - Tanggal Aktivitas  (format dd/mm/yyyy)
-  //    - Detail Aktifitas   (textarea)
-  //    - Satuan             (input text)
-  //    - WPT                (input number, menit)
-  //    - Volume             (input number)
+  //    - Tanggal Aktivitas   (format dd/mm/yyyy)
+  //    - Detail Aktifitas    (readonly — diisi via popup popup_aktifitas.php)
+  //    - Satuan              (input text)
+  //    - WPT                 (input number, menit)
+  //    - Volume              (input number)
   //    - Objek Kerja / Topik (textarea)
+  //
+  //  "Detail Aktifitas" tidak bisa diketik manual.
+  //  Harus klik ikon titik 3 → buka popup → cari kata kunci → klik hasil.
+  //  Skrip ini otomatis melakukan alur tersebut.
   // ============================================================
   const DEFAULT_CONFIG = {
     templates: [
       {
         label: 'Administrasi Surat',
-        detail: 'Menerima, mencatat, dan mendistribusikan surat masuk serta menyiapkan surat keluar',
+        kataKunci: 'administrasi surat',
         satuan: 'Dokumen',
         wpt: 120,
         volume: 5,
@@ -38,7 +42,7 @@
       },
       {
         label: 'Menyusun Laporan',
-        detail: 'Menyusun laporan harian/mingguan/bulanan sesuai tupoksi',
+        kataKunci: 'menyusun laporan',
         satuan: 'Laporan',
         wpt: 90,
         volume: 1,
@@ -46,7 +50,7 @@
       },
       {
         label: 'Rapat Koordinasi',
-        detail: 'Menghadiri rapat koordinasi internal dengan rekan kerja dan pimpinan',
+        kataKunci: 'rapat koordinasi',
         satuan: 'Kegiatan',
         wpt: 60,
         volume: 1,
@@ -54,7 +58,7 @@
       },
       {
         label: 'Pelayanan Publik',
-        detail: 'Memberikan pelayanan informasi dan administrasi kepada tamu dan masyarakat',
+        kataKunci: 'pelayanan',
         satuan: 'Orang',
         wpt: 60,
         volume: 3,
@@ -62,7 +66,7 @@
       },
       {
         label: 'Pengelolaan Data',
-        detail: 'Menginput, memperbarui, dan mengarsipkan data kepegawaian',
+        kataKunci: 'pengelolaan data',
         satuan: 'Data',
         wpt: 90,
         volume: 10,
@@ -70,14 +74,15 @@
       },
       {
         label: 'Tindakan Keperawatan',
-        detail: 'Melaksanakan tindakan keperawatan tepat waktu sesuai standar prosedur operasional',
+        kataKunci: 'keperawatan',
         satuan: 'Pasien',
         wpt: 120,
         volume: 5,
         objekKerja: 'Pasien rawat inap / rawat jalan',
       },
     ],
-    delayMs: 300,
+    delayMs: 500,
+    popupWaitMs: 2000,
     targetHarianMenit: 330,
     targetMaksimalMenit: 660,
   };
@@ -87,7 +92,7 @@
   // ============================================================
   function loadConfig() {
     try {
-      const saved = GM_getValue('emasterConfig2', null);
+      const saved = GM_getValue('emasterConfig3', null);
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn('[EM-AutoFill] load error', e);
@@ -97,7 +102,7 @@
 
   function saveConfig(cfg) {
     try {
-      GM_setValue('emasterConfig2', JSON.stringify(cfg));
+      GM_setValue('emasterConfig3', JSON.stringify(cfg));
     } catch (e) {
       console.warn('[EM-AutoFill] save error', e);
     }
@@ -127,7 +132,7 @@
     return true;
   }
 
-  function wait(ms) {
+  function waitMs(ms) {
     return new Promise((r) => setTimeout(r, ms));
   }
 
@@ -139,31 +144,27 @@
 
   // ============================================================
   //  FORM FIELD DETECTION
-  //  Mencari field berdasarkan label teks di halaman form
   // ============================================================
   function findFieldByLabel(labelText) {
-    // Strategi 1: cari semua teks yang mengandung labelText
     const allLabels = $$('td, th, label, span, div, b, strong');
     for (const lbl of allLabels) {
       if (
         lbl.childElementCount <= 1 &&
         lbl.textContent.trim().toLowerCase().includes(labelText.toLowerCase())
       ) {
-        // Cari input/textarea/select terdekat
-        // Cek sibling berikutnya
         let next = lbl.nextElementSibling;
         while (next) {
-          const field = next.querySelector('input, textarea, select') || (next.matches('input, textarea, select') ? next : null);
+          const field =
+            next.querySelector('input, textarea, select') ||
+            (next.matches?.('input, textarea, select') ? next : null);
           if (field) return field;
           next = next.nextElementSibling;
         }
-        // Cek parent row
         const row = lbl.closest('tr');
         if (row) {
           const field = row.querySelector('input, textarea, select');
           if (field) return field;
         }
-        // Cek parent container
         const parent = lbl.parentElement;
         if (parent) {
           const field = parent.querySelector('input, textarea, select');
@@ -171,6 +172,60 @@
         }
       }
     }
+    return null;
+  }
+
+  function findPopupTrigger() {
+    // Cari ikon/tombol titik 3 di dekat field "Detail Aktifitas"
+    // Biasanya berupa <a>, <img>, <button>, atau <span> yang membuka popup
+    const detailField = findFieldByLabel('Detail Aktifitas') || findFieldByLabel('Detail Aktivitas');
+    if (detailField) {
+      const parent = detailField.parentElement;
+      if (parent) {
+        // Cari link/button/img yang bisa diklik di sekitar field detail
+        const triggers = $$('a, button, img, span, i', parent);
+        for (const t of triggers) {
+          const href = t.getAttribute('href') || '';
+          const onclick = t.getAttribute('onclick') || '';
+          const title = (t.getAttribute('title') || '').toLowerCase();
+          const cls = (t.className || '').toLowerCase();
+
+          if (
+            href.includes('popup') ||
+            onclick.includes('popup') ||
+            onclick.includes('window.open') ||
+            title.includes('cari') ||
+            title.includes('pilih') ||
+            title.includes('browse') ||
+            cls.includes('popup') ||
+            cls.includes('browse') ||
+            t.tagName === 'IMG'
+          ) {
+            return t;
+          }
+        }
+        // Fallback: cari semua elemen clickable di row/container yang sama
+        const row = detailField.closest('tr') || parent;
+        const allClickable = $$('a, button, img[onclick], span[onclick], i[onclick]', row);
+        for (const t of allClickable) {
+          if (t !== detailField) return t;
+        }
+      }
+    }
+
+    // Fallback global: cari link yang mengandung popup_aktifitas
+    const popupLink = $('a[href*="popup_aktifitas"], a[onclick*="popup_aktifitas"]');
+    if (popupLink) return popupLink;
+
+    // Fallback: cari semua onclick yang mengandung popup
+    const allOnclick = $$('[onclick*="popup"], [onclick*="window.open"]');
+    for (const el of allOnclick) {
+      const onclick = el.getAttribute('onclick') || '';
+      if (onclick.includes('aktifitas') || onclick.includes('aktivitas')) {
+        return el;
+      }
+    }
+
     return null;
   }
 
@@ -183,74 +238,151 @@
       wpt: findFieldByLabel('WPT'),
       volume: findFieldByLabel('Volume'),
       objekKerja: findFieldByLabel('Objek Kerja') || findFieldByLabel('Topik'),
+      popupTrigger: findPopupTrigger(),
       saveBtn: $$('input[type="submit"], input[type="button"], button').find(
-        (b) => b.value?.toLowerCase() === 'save' || b.textContent?.trim().toLowerCase() === 'save'
+        (b) =>
+          b.value?.toLowerCase() === 'save' ||
+          b.textContent?.trim().toLowerCase() === 'save'
       ),
       cancelBtn: $$('input[type="submit"], input[type="button"], button').find(
-        (b) => b.value?.toLowerCase() === 'cancel' || b.textContent?.trim().toLowerCase() === 'cancel'
+        (b) =>
+          b.value?.toLowerCase() === 'cancel' ||
+          b.textContent?.trim().toLowerCase() === 'cancel'
       ),
     };
   }
 
   // ============================================================
-  //  AUTO-FILL
+  //  POPUP HANDLER — Detail Aktifitas
+  //  Alur: klik ikon titik 3 → popup terbuka → isi kata kunci
+  //        → klik cari → klik hasil pertama → popup menutup
   // ============================================================
-  async function fillForm(tpl, autoSave) {
-    const f = detectFields();
-    const log = [];
+  async function fillDetailViaPopup(kataKunci) {
+    const trigger = findPopupTrigger();
+    if (!trigger) {
+      return { ok: false, msg: 'Ikon popup Detail Aktifitas tidak ditemukan' };
+    }
 
-    // Tanggal — isi dengan hari ini jika kosong
-    if (f.tanggal) {
-      const now = new Date();
-      const dd = String(now.getDate()).padStart(2, '0');
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const yyyy = now.getFullYear();
-      const current = f.tanggal.value.replace(/[^0-9]/g, '');
-      if (!current || current === '00000000') {
-        setVal(f.tanggal, `${dd}/${mm}/${yyyy}`);
-        log.push(`Tanggal: ${dd}/${mm}/${yyyy}`);
-      } else {
-        log.push(`Tanggal: sudah terisi`);
+    // Intercept window.open agar kita bisa akses popup window
+    let popupWin = null;
+    const origOpen = window.open;
+    window.open = function (...args) {
+      popupWin = origOpen.apply(this, args);
+      return popupWin;
+    };
+
+    // Klik trigger
+    trigger.click();
+
+    // Tunggu popup terbuka
+    const maxWait = config.popupWaitMs || 3000;
+    const startTime = Date.now();
+    while (!popupWin && Date.now() - startTime < maxWait) {
+      await waitMs(200);
+    }
+
+    // Restore window.open
+    window.open = origOpen;
+
+    if (!popupWin) {
+      return {
+        ok: false,
+        msg: 'Popup tidak terbuka. Coba klik ikon titik 3 manual lalu gunakan skrip di popup.',
+      };
+    }
+
+    // Tunggu popup DOM siap
+    await waitMs(1000);
+
+    try {
+      const popupDoc = popupWin.document;
+      if (!popupDoc) {
+        return { ok: false, msg: 'Tidak bisa akses konten popup (cross-origin?)' };
       }
-      await wait(config.delayMs);
-    }
 
-    if (f.detail) {
-      setVal(f.detail, tpl.detail);
-      log.push(`Detail: ${tpl.detail.substring(0, 40)}...`);
-      await wait(config.delayMs);
-    }
+      // Cari kolom pencarian di popup
+      const searchInput =
+        popupDoc.querySelector('input[type="text"]') ||
+        popupDoc.querySelector('input[type="search"]') ||
+        popupDoc.querySelector('input[name*="cari"]') ||
+        popupDoc.querySelector('input[name*="search"]') ||
+        popupDoc.querySelector('input[name*="keyword"]') ||
+        popupDoc.querySelector('input[name*="kata"]') ||
+        popupDoc.querySelector('input[placeholder*="cari"]') ||
+        popupDoc.querySelector('input[placeholder*="search"]') ||
+        popupDoc.querySelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"])');
 
-    if (f.satuan) {
-      setVal(f.satuan, tpl.satuan);
-      log.push(`Satuan: ${tpl.satuan}`);
-      await wait(config.delayMs);
-    }
+      if (!searchInput) {
+        popupWin.close();
+        return { ok: false, msg: 'Kolom pencarian di popup tidak ditemukan' };
+      }
 
-    if (f.wpt) {
-      setVal(f.wpt, String(tpl.wpt));
-      log.push(`WPT: ${tpl.wpt} menit`);
-      await wait(config.delayMs);
-    }
+      // Isi kata kunci
+      searchInput.value = kataKunci;
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await waitMs(300);
 
-    if (f.volume) {
-      setVal(f.volume, String(tpl.volume));
-      log.push(`Volume: ${tpl.volume}`);
-      await wait(config.delayMs);
-    }
+      // Klik tombol cari/search
+      const searchBtn =
+        popupDoc.querySelector('input[type="submit"]') ||
+        popupDoc.querySelector('button[type="submit"]') ||
+        [...popupDoc.querySelectorAll('input[type="button"], button')].find(
+          (b) => {
+            const t = (b.value || b.textContent || '').toLowerCase();
+            return t.includes('cari') || t.includes('search') || t.includes('find');
+          }
+        );
 
-    if (f.objekKerja) {
-      setVal(f.objekKerja, tpl.objekKerja);
-      log.push(`Objek Kerja: ${tpl.objekKerja}`);
-      await wait(config.delayMs);
-    }
+      if (searchBtn) {
+        searchBtn.click();
+      } else {
+        // Fallback: submit form
+        const form = searchInput.closest('form');
+        if (form) form.submit();
+      }
 
-    if (autoSave && f.saveBtn) {
-      f.saveBtn.click();
-      log.push('Tombol Save diklik!');
-    }
+      // Tunggu hasil muncul
+      await waitMs(1500);
 
-    return log;
+      // Klik hasil pertama — biasanya link <a> atau <tr> di tabel hasil
+      const resultLink =
+        popupDoc.querySelector('table a') ||
+        popupDoc.querySelector('a[href*="javascript"]') ||
+        popupDoc.querySelector('td a') ||
+        popupDoc.querySelector('.result a') ||
+        popupDoc.querySelector('a');
+
+      // Juga coba cari baris tabel yang bisa diklik
+      const resultRow =
+        popupDoc.querySelector('table tbody tr[onclick]') ||
+        popupDoc.querySelector('table tr[onclick]') ||
+        popupDoc.querySelector('table tbody tr:nth-child(2)');
+
+      if (resultLink && resultLink.href?.includes('javascript')) {
+        resultLink.click();
+        await waitMs(500);
+        return { ok: true, msg: `Detail Aktifitas diisi via popup (kata kunci: "${kataKunci}")` };
+      } else if (resultRow) {
+        resultRow.click();
+        await waitMs(500);
+        return { ok: true, msg: `Detail Aktifitas diisi via popup (kata kunci: "${kataKunci}")` };
+      } else if (resultLink) {
+        resultLink.click();
+        await waitMs(500);
+        return { ok: true, msg: `Detail Aktifitas diisi via popup (kata kunci: "${kataKunci}")` };
+      } else {
+        return {
+          ok: false,
+          msg: `Tidak ada hasil untuk kata kunci "${kataKunci}" di popup. Coba kata kunci lain.`,
+        };
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        msg: `Error saat mengakses popup: ${e.message}. Mungkin cross-origin — isi Detail Aktifitas secara manual.`,
+      };
+    }
   }
 
   // ============================================================
@@ -333,8 +465,8 @@
         <!-- CONFIG -->
         <div class="em-pane" id="em-p-cfg">
           <label class="em-lbl">Tambah Template:</label>
-          <input id="em-c-label" class="em-inp" placeholder="Nama / Label" />
-          <textarea id="em-c-detail" class="em-inp" rows="2" placeholder="Detail Aktifitas"></textarea>
+          <input id="em-c-label" class="em-inp" placeholder="Nama / Label template" />
+          <input id="em-c-kata" class="em-inp" placeholder="Kata kunci pencarian Detail Aktifitas" />
           <div class="em-row">
             <input id="em-c-satuan" class="em-inp" placeholder="Satuan" />
             <input id="em-c-wpt" class="em-inp" type="number" placeholder="WPT (menit)" value="60" min="1" />
@@ -376,7 +508,6 @@
   //  EVENTS
   // ============================================================
   function bindEvents() {
-    // Tabs
     $$('.em-tab').forEach((t) =>
       t.addEventListener('click', () => {
         $$('.em-tab').forEach((x) => x.classList.remove('on'));
@@ -386,7 +517,6 @@
       })
     );
 
-    // Minimize / restore / close
     $('#em-min').onclick = () => {
       $('#em-body').style.display = 'none';
       $('#em-hdr').style.display = 'none';
@@ -399,14 +529,12 @@
     };
     $('#em-cls').onclick = () => ($('#em-panel').style.display = 'none');
 
-    // Fill
     $('#em-go').onclick = () => doFill(false);
     $('#em-go-save').onclick = () => doFill(true);
 
-    // Config — add
     $('#em-c-add').onclick = addTemplate;
     $('#em-c-save').onclick = () => {
-      config.delayMs = parseInt($('#em-c-delay').value) || 300;
+      config.delayMs = parseInt($('#em-c-delay').value) || 500;
       saveConfig(config);
       msg('Konfigurasi disimpan!', 's');
     };
@@ -419,7 +547,6 @@
       msg('Reset ke default.', 'i');
     };
 
-    // Detect
     $('#em-det-btn').onclick = renderDetected;
   }
 
@@ -433,16 +560,14 @@
       return;
     }
 
-    // Override tanggal jika diisi manual
     const tglInput = $('#em-tanggal').value.trim();
     const tpl = { ...sel };
 
     msg('Mengisi form...', 'i');
     const f = detectFields();
-
     const log = [];
 
-    // Tanggal
+    // 1. Tanggal Aktivitas
     if (f.tanggal) {
       let tgl = tglInput;
       if (!tgl) {
@@ -456,20 +581,54 @@
       } else {
         log.push(`Tanggal: sudah terisi (${f.tanggal.value})`);
       }
-      await wait(config.delayMs);
+      await waitMs(config.delayMs);
     }
 
-    if (f.detail) { setVal(f.detail, tpl.detail); log.push(`Detail: ${tpl.detail.substring(0, 50)}...`); await wait(config.delayMs); }
-    if (f.satuan) { setVal(f.satuan, tpl.satuan); log.push(`Satuan: ${tpl.satuan}`); await wait(config.delayMs); }
-    if (f.wpt) { setVal(f.wpt, String(tpl.wpt)); log.push(`WPT: ${tpl.wpt} menit`); await wait(config.delayMs); }
-    if (f.volume) { setVal(f.volume, String(tpl.volume)); log.push(`Volume: ${tpl.volume}`); await wait(config.delayMs); }
-    if (f.objekKerja) { setVal(f.objekKerja, tpl.objekKerja); log.push(`Objek Kerja: ${tpl.objekKerja}`); await wait(config.delayMs); }
+    // 2. Detail Aktifitas — via popup
+    if (tpl.kataKunci) {
+      msg('Mengisi form...\nMembuka popup Detail Aktifitas...', 'i');
+      const popupResult = await fillDetailViaPopup(tpl.kataKunci);
+      log.push(popupResult.msg);
+      if (!popupResult.ok) {
+        log.push('Tip: Isi Detail Aktifitas manual, lalu klik "Isi Form" lagi untuk field lainnya');
+      }
+      await waitMs(config.delayMs);
+    }
+
+    // 3. Satuan
+    if (f.satuan) {
+      setVal(f.satuan, tpl.satuan);
+      log.push(`Satuan: ${tpl.satuan}`);
+      await waitMs(config.delayMs);
+    }
+
+    // 4. WPT
+    if (f.wpt) {
+      setVal(f.wpt, String(tpl.wpt));
+      log.push(`WPT: ${tpl.wpt} menit`);
+      await waitMs(config.delayMs);
+    }
+
+    // 5. Volume
+    if (f.volume) {
+      setVal(f.volume, String(tpl.volume));
+      log.push(`Volume: ${tpl.volume}`);
+      await waitMs(config.delayMs);
+    }
+
+    // 6. Objek Kerja / Topik
+    if (f.objekKerja) {
+      setVal(f.objekKerja, tpl.objekKerja);
+      log.push(`Objek Kerja: ${tpl.objekKerja}`);
+      await waitMs(config.delayMs);
+    }
 
     if (log.length === 0) {
       msg('Tidak ada field yang terdeteksi!\nPastikan Anda di halaman form Aktivitas Harian.', 'e');
       return;
     }
 
+    // 7. Save
     if (autoSave && f.saveBtn) {
       f.saveBtn.click();
       log.push('Tombol Save diklik!');
@@ -491,7 +650,7 @@
         (t, i) => `
       <div class="em-card" data-i="${i}">
         <div class="em-card-t">${esc(t.label)}</div>
-        <div class="em-card-d">${esc(t.detail)}</div>
+        <div class="em-card-d">Kata kunci: "${esc(t.kataKunci)}"</div>
         <span class="em-badge">${t.wpt} mnt</span>
         <span class="em-badge">Vol ${t.volume}</span>
         <span class="em-badge">${esc(t.satuan)}</span>
@@ -539,7 +698,8 @@
     const map = {
       kegiatan: 'Kegiatan Tugas Jabatan',
       tanggal: 'Tanggal Aktivitas',
-      detail: 'Detail Aktifitas',
+      detail: 'Detail Aktifitas (readonly)',
+      popupTrigger: 'Ikon Popup Detail (titik 3)',
       satuan: 'Satuan',
       wpt: 'WPT',
       volume: 'Volume',
@@ -552,7 +712,9 @@
       .map(([k, label]) => {
         const el = f[k];
         const ok = !!el;
-        const tag = el ? `<${el.tagName.toLowerCase()} ${el.name ? 'name="' + el.name + '"' : ''} ${el.id ? 'id="' + el.id + '"' : ''}>` : 'Tidak ditemukan';
+        const tag = el
+          ? `<${el.tagName.toLowerCase()}${el.name ? ' name="' + el.name + '"' : ''}${el.id ? ' id="' + el.id + '"' : ''}>`
+          : 'Tidak ditemukan';
         return `<div class="em-det ${ok ? 'ok' : 'no'}">${label}: ${esc(tag)}</div>`;
       })
       .join('');
@@ -574,25 +736,43 @@
     const pct = Math.min((total / config.targetHarianMenit) * 100, 100);
     const bar = $('#em-bar');
     bar.style.width = pct + '%';
-    bar.style.background = total < config.targetHarianMenit ? '#e65100' : total <= config.targetMaksimalMenit ? '#2e7d32' : '#c62828';
+    bar.style.background =
+      total < config.targetHarianMenit
+        ? '#e65100'
+        : total <= config.targetMaksimalMenit
+          ? '#2e7d32'
+          : '#c62828';
   }
 
   function addTemplate() {
     const label = $('#em-c-label').value.trim();
-    const detail = $('#em-c-detail').value.trim();
+    const kataKunci = $('#em-c-kata').value.trim();
     const satuan = $('#em-c-satuan').value.trim() || 'Kegiatan';
     const wpt = parseInt($('#em-c-wpt').value) || 60;
     const vol = parseInt($('#em-c-vol').value) || 1;
     const objek = $('#em-c-objek').value.trim();
 
-    if (!label) { msg('Nama template harus diisi!', 'w'); return; }
-    if (!detail) { msg('Detail aktifitas harus diisi!', 'w'); return; }
+    if (!label) {
+      msg('Nama template harus diisi!', 'w');
+      return;
+    }
+    if (!kataKunci) {
+      msg('Kata kunci pencarian harus diisi!', 'w');
+      return;
+    }
 
-    config.templates.push({ label, detail, satuan, wpt, volume: vol, objekKerja: objek || label });
+    config.templates.push({
+      label,
+      kataKunci,
+      satuan,
+      wpt,
+      volume: vol,
+      objekKerja: objek || label,
+    });
     saveConfig(config);
 
     $('#em-c-label').value = '';
-    $('#em-c-detail').value = '';
+    $('#em-c-kata').value = '';
     $('#em-c-satuan').value = '';
     $('#em-c-wpt').value = '60';
     $('#em-c-vol').value = '1';
@@ -616,7 +796,9 @@
   function makeDraggable() {
     const panel = $('#em-panel');
     const hdr = $('#em-hdr');
-    let dragging = false, ox, oy;
+    let dragging = false,
+      ox,
+      oy;
     hdr.addEventListener('mousedown', (e) => {
       dragging = true;
       ox = e.clientX - panel.getBoundingClientRect().left;
@@ -636,11 +818,26 @@
   }
 
   // ============================================================
-  //  INIT
+  //  INIT — hanya tampilkan panel di halaman setelah login
   // ============================================================
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', buildPanel);
-  } else {
+  function isLoginPage() {
+    const url = window.location.href.toLowerCase();
+    const body = document.body?.textContent?.toLowerCase() || '';
+    return (
+      url.includes('login') ||
+      url.includes('index.php') ||
+      (body.includes('nomer induk pegawai') && body.includes('password'))
+    );
+  }
+
+  function init() {
+    if (isLoginPage()) return;
     buildPanel();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
 })();
