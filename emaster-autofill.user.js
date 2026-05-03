@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         E-MASTER Auto-Fill Aktivitas Harian
 // @namespace    https://github.com/kangsotox991/emasterjs
-// @version      1.2.0
+// @version      1.3.0
 // @description  Skrip auto-fill form Aktivitas Harian SKP di Si-MASTER BKD Jatim dengan GUI panel. Login manual, skrip hanya mengisi data form.
 // @author       kangsotox991
 // @match        https://master.bkd.jatimprov.go.id/*
@@ -9,6 +9,7 @@
 // @grant        GM_addStyle
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @require      https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js
 // @run-at       document-idle
 // @license      MIT
 // ==/UserScript==
@@ -471,6 +472,7 @@
       <div id="em-body">
         <div class="em-tabs">
           <div class="em-tab on" data-t="fill">Isi Form</div>
+          <div class="em-tab" data-t="excel">Excel</div>
           <div class="em-tab" data-t="cfg">Konfigurasi</div>
           <div class="em-tab" data-t="det">Deteksi</div>
         </div>
@@ -507,6 +509,28 @@
             <button class="em-btn em-pri" id="em-c-save">Simpan Konfigurasi</button>
             <button class="em-btn em-dan" id="em-c-reset">Reset Default</button>
           </div>
+        </div>
+
+        <!-- EXCEL IMPORT -->
+        <div class="em-pane" id="em-p-excel">
+          <label class="em-lbl">Import data dari Excel (.xlsx / .csv):</label>
+          <input type="file" id="em-excel-file" accept=".xlsx,.xls,.csv" class="em-inp" style="padding:4px" />
+          <small style="font-size:10px;color:#888;display:block;margin-bottom:6px">
+            Format kolom: <b>Tanggal</b> | <b>Kata Kunci</b> | <b>Volume</b> | <b>Objek Kerja</b><br>
+            Contoh: 01/05/2026 | keperawatan | 5 | Pasien rawat inap
+          </small>
+          <div id="em-excel-preview" style="max-height:200px;overflow-y:auto;margin-bottom:8px"></div>
+          <div id="em-excel-info" style="font-size:11px;color:#555;margin-bottom:6px"></div>
+          <div class="em-btngrp">
+            <button class="em-btn em-pri" id="em-excel-fill" disabled>Isi Baris Saat Ini</button>
+            <button class="em-btn em-suc" id="em-excel-fill-save" disabled>Isi & Save Baris Ini</button>
+          </div>
+          <div style="margin-top:6px">
+            <button class="em-btn em-warn" id="em-excel-prev" disabled style="font-size:10px;padding:4px 8px">&laquo; Prev</button>
+            <span id="em-excel-pos" style="font-size:11px;margin:0 8px"></span>
+            <button class="em-btn em-warn" id="em-excel-next" disabled style="font-size:10px;padding:4px 8px">Next &raquo;</button>
+          </div>
+          <div id="em-excel-status" class="em-msg"></div>
         </div>
 
         <!-- DETECT -->
@@ -571,6 +595,266 @@
     };
 
     $('#em-det-btn').onclick = renderDetected;
+
+    // Excel import
+    $('#em-excel-file').onchange = handleExcelFile;
+    $('#em-excel-fill').onclick = () => doFillExcelRow(false);
+    $('#em-excel-fill-save').onclick = () => doFillExcelRow(true);
+    $('#em-excel-prev').onclick = () => navigateExcelRow(-1);
+    $('#em-excel-next').onclick = () => navigateExcelRow(1);
+  }
+
+  // ============================================================
+  //  EXCEL IMPORT
+  //  Format Excel: header row berisi kolom:
+  //    Tanggal, Kegiatan Tugas Jabatan, Obyek Kerja, Volume
+  //  Tanggal hanya di baris pertama per hari (baris berikutnya inherit)
+  // ============================================================
+  let excelData = [];
+  let excelRowIdx = 0;
+
+  function handleExcelFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (evt) {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+        excelData = parseExcelRows(json);
+
+        if (excelData.length === 0) {
+          excelMsg('Tidak ada data yang bisa diparsing dari file ini.', 'e');
+          return;
+        }
+
+        excelRowIdx = 0;
+        renderExcelPreview();
+        updateExcelNav();
+        excelMsg(`${excelData.length} baris data ditemukan. Siap isi form.`, 's');
+
+        $('#em-excel-fill').disabled = false;
+        $('#em-excel-fill-save').disabled = false;
+      } catch (err) {
+        excelMsg(`Error membaca file: ${err.message}`, 'e');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function parseExcelRows(json) {
+    // Cari header row: baris yang mengandung "Tanggal" dan "Kegiatan" atau "Volume"
+    let headerIdx = -1;
+    let colMap = {};
+
+    for (let i = 0; i < Math.min(json.length, 30); i++) {
+      const row = json[i].map((c) => String(c || '').toLowerCase().trim());
+      const hasKegiatan = row.some((c) => c.includes('kegiatan'));
+      const hasTanggal = row.some((c) => c.includes('tanggal'));
+      const hasVolume = row.some((c) => c.includes('volume'));
+
+      if (hasKegiatan && (hasTanggal || hasVolume)) {
+        headerIdx = i;
+        for (let j = 0; j < row.length; j++) {
+          if (row[j].includes('tanggal')) colMap.tanggal = j;
+          if (row[j].includes('kegiatan')) colMap.kegiatan = j;
+          if (row[j].includes('obyek') || row[j].includes('objek') || row[j].includes('topik'))
+            colMap.objekKerja = j;
+          if (row[j].includes('volume')) colMap.volume = j;
+        }
+        break;
+      }
+    }
+
+    if (headerIdx === -1) {
+      // Fallback: assume first row is header
+      headerIdx = 0;
+      const row = json[0].map((c) => String(c || '').toLowerCase().trim());
+      for (let j = 0; j < row.length; j++) {
+        if (row[j].includes('tanggal')) colMap.tanggal = j;
+        if (row[j].includes('kegiatan') || row[j].includes('kata kunci') || row[j].includes('aktifitas'))
+          colMap.kegiatan = j;
+        if (row[j].includes('obyek') || row[j].includes('objek') || row[j].includes('topik'))
+          colMap.objekKerja = j;
+        if (row[j].includes('volume')) colMap.volume = j;
+      }
+    }
+
+    // Kolom kegiatan wajib ada
+    if (colMap.kegiatan === undefined) return [];
+
+    const result = [];
+    let lastTanggal = '';
+
+    for (let i = headerIdx + 1; i < json.length; i++) {
+      const row = json[i];
+      const kegiatan = String(row[colMap.kegiatan] || '').trim();
+      if (!kegiatan) continue;
+
+      // Parse tanggal
+      let tgl = '';
+      if (colMap.tanggal !== undefined) {
+        const rawTgl = row[colMap.tanggal];
+        if (rawTgl) {
+          tgl = formatTanggal(rawTgl);
+          if (tgl) lastTanggal = tgl;
+        }
+      }
+      if (!tgl) tgl = lastTanggal;
+
+      const volume = colMap.volume !== undefined ? parseInt(row[colMap.volume]) || 1 : 1;
+      const objekKerja =
+        colMap.objekKerja !== undefined ? String(row[colMap.objekKerja] || '').trim() : '';
+
+      result.push({ tanggal: tgl, kataKunci: kegiatan, volume, objekKerja });
+    }
+
+    return result;
+  }
+
+  function formatTanggal(val) {
+    if (!val) return '';
+    // Jika Date object
+    if (val instanceof Date) {
+      const dd = String(val.getDate()).padStart(2, '0');
+      const mm = String(val.getMonth() + 1).padStart(2, '0');
+      const yyyy = val.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+    const s = String(val).trim();
+    // Sudah format dd/mm/yyyy?
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+    // Format yyyy-mm-dd?
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+    // Format dd-mm-yyyy?
+    const dmy = s.match(/^(\d{2})-(\d{2})-(\d{4})/);
+    if (dmy) return `${dmy[1]}/${dmy[2]}/${dmy[3]}`;
+    return '';
+  }
+
+  function renderExcelPreview() {
+    const box = $('#em-excel-preview');
+    if (!box || excelData.length === 0) return;
+
+    const start = Math.max(0, excelRowIdx - 2);
+    const end = Math.min(excelData.length, excelRowIdx + 5);
+
+    let html =
+      '<table style="width:100%;border-collapse:collapse;font-size:10px">' +
+      '<tr style="background:#1565c0;color:#fff"><th style="padding:3px">No</th><th style="padding:3px">Tanggal</th><th style="padding:3px">Kegiatan</th><th style="padding:3px">Vol</th></tr>';
+
+    for (let i = start; i < end; i++) {
+      const d = excelData[i];
+      const isCurrent = i === excelRowIdx;
+      const bg = isCurrent ? '#e3f2fd;font-weight:700' : i % 2 === 0 ? '#fafafa' : '#fff';
+      const arrow = isCurrent ? '&#9654; ' : '';
+      html += `<tr style="background:${bg}">
+        <td style="padding:2px 4px;border:1px solid #e0e0e0">${arrow}${i + 1}</td>
+        <td style="padding:2px 4px;border:1px solid #e0e0e0">${esc(d.tanggal)}</td>
+        <td style="padding:2px 4px;border:1px solid #e0e0e0">${esc(d.kataKunci.substring(0, 35))}${d.kataKunci.length > 35 ? '...' : ''}</td>
+        <td style="padding:2px 4px;border:1px solid #e0e0e0">${d.volume}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    box.innerHTML = html;
+  }
+
+  function updateExcelNav() {
+    const total = excelData.length;
+    const pos = $('#em-excel-pos');
+    const prevBtn = $('#em-excel-prev');
+    const nextBtn = $('#em-excel-next');
+
+    if (pos) pos.textContent = `Baris ${excelRowIdx + 1} / ${total}`;
+    if (prevBtn) prevBtn.disabled = excelRowIdx <= 0;
+    if (nextBtn) nextBtn.disabled = excelRowIdx >= total - 1;
+
+    renderExcelPreview();
+  }
+
+  function navigateExcelRow(dir) {
+    excelRowIdx = Math.max(0, Math.min(excelData.length - 1, excelRowIdx + dir));
+    updateExcelNav();
+  }
+
+  async function doFillExcelRow(autoSave) {
+    if (excelData.length === 0 || excelRowIdx >= excelData.length) {
+      excelMsg('Tidak ada data untuk diisi.', 'w');
+      return;
+    }
+
+    const row = excelData[excelRowIdx];
+    excelMsg(`Mengisi baris ${excelRowIdx + 1}...`, 'i');
+
+    const f = detectFields();
+    const log = [];
+
+    // 1. Tanggal
+    if (f.tanggal && row.tanggal) {
+      const cur = f.tanggal.value.replace(/[^0-9]/g, '');
+      if (!cur || cur === '00000000') {
+        setVal(f.tanggal, row.tanggal);
+        log.push(`Tanggal: ${row.tanggal}`);
+      } else {
+        log.push(`Tanggal: sudah terisi (${f.tanggal.value})`);
+      }
+      await waitMs(config.delayMs);
+    }
+
+    // 2. Detail Aktifitas via popup (kata kunci dari kolom Kegiatan)
+    if (row.kataKunci) {
+      excelMsg(`Baris ${excelRowIdx + 1}: Membuka popup...`, 'i');
+      const popupResult = await fillDetailViaPopup(row.kataKunci);
+      log.push(popupResult.msg);
+      if (popupResult.ok) {
+        log.push('Detail, Satuan, WPT \u2192 terisi dari Kamus Aktifitas');
+      } else {
+        log.push('Tip: Klik ikon titik 3 manual, lalu isi dari popup');
+      }
+      await waitMs(config.delayMs);
+    }
+
+    // 3. Volume
+    if (f.volume) {
+      setVal(f.volume, String(row.volume));
+      log.push(`Volume: ${row.volume}`);
+      await waitMs(config.delayMs);
+    }
+
+    // 4. Objek Kerja
+    if (f.objekKerja && row.objekKerja) {
+      setVal(f.objekKerja, row.objekKerja);
+      log.push(`Objek Kerja: ${row.objekKerja.substring(0, 60)}${row.objekKerja.length > 60 ? '...' : ''}`);
+      await waitMs(config.delayMs);
+    }
+
+    // 5. Save
+    if (autoSave && f.saveBtn) {
+      f.saveBtn.click();
+      log.push('Tombol Save diklik!');
+    } else if (autoSave) {
+      log.push('Tombol Save tidak ditemukan \u2014 klik manual.');
+    }
+
+    excelMsg(`Baris ${excelRowIdx + 1} selesai:\n${log.join('\n')}`, 's');
+
+    // Auto advance ke baris berikutnya
+    if (excelRowIdx < excelData.length - 1) {
+      excelRowIdx++;
+      updateExcelNav();
+    }
+  }
+
+  function excelMsg(text, type) {
+    const el = $('#em-excel-status');
+    if (!el) return;
+    el.className = `em-msg ${type || 'i'}`;
+    el.textContent = text;
   }
 
   // ============================================================

@@ -97,6 +97,25 @@ Field "Detail Aktifitas", "Satuan", dan "WPT" **tidak bisa diketik langsung** â€
 - Atur delay antar pengisian (default 500ms)
 - Reset ke default jika diperlukan
 
+### Tab "Excel"
+- Upload file Excel (.xlsx) atau CSV
+- Skrip otomatis mendeteksi kolom: **Tanggal**, **Kegiatan Tugas Jabatan**, **Volume**, **Obyek Kerja**
+- Navigasi baris data dengan tombol Prev/Next
+- Klik **Isi Baris Saat Ini** untuk mengisi form dari baris Excel yang aktif
+- Klik **Isi & Save Baris Ini** untuk isi + langsung save
+- Setelah isi, otomatis pindah ke baris berikutnya
+
+**Format Excel yang didukung:**
+
+| Kolom | Keterangan |
+|---|---|
+| Tanggal | Tanggal aktivitas (otomatis inherit ke baris di bawahnya jika kosong) |
+| Kegiatan Tugas Jabatan | Kata kunci pencarian di popup Kamus Aktifitas |
+| Obyek Kerja | Objek kerja / topik |
+| Volume | Jumlah volume |
+
+> Header bisa di baris manapun (skrip otomatis mencari baris yang mengandung "Tanggal" dan "Kegiatan"). Format tanggal: dd/mm/yyyy, dd-mm-yyyy, yyyy-mm-dd, atau Date Excel.
+
 ### Tab "Deteksi"
 - Klik **Deteksi Ulang** untuk melihat field form apa saja yang terdeteksi di halaman
 - Mendeteksi juga **Ikon Popup Detail (titik 3)**
