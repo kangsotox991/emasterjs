@@ -254,8 +254,14 @@
 
   // ============================================================
   //  POPUP HANDLER — Detail Aktifitas
+  //  Popup: "Kamus Aktifitas Harian - DINAS ..."
+  //    - Input "Aktifitas:" + tombol "Cari"
+  //    - Tabel hasil: No, Aktifitas, Satuan, WPT, Deskripsi,
+  //      Objek Kerja, OPD
+  //    - Klik baris hasil → data masuk ke form utama
+  //
   //  Alur: klik ikon titik 3 → popup terbuka → isi kata kunci
-  //        → klik cari → klik hasil pertama → popup menutup
+  //        → klik Cari → tunggu tabel → klik baris pertama
   // ============================================================
   async function fillDetailViaPopup(kataKunci) {
     const trigger = findPopupTrigger();
@@ -287,34 +293,40 @@
     if (!popupWin) {
       return {
         ok: false,
-        msg: 'Popup tidak terbuka. Coba klik ikon titik 3 manual lalu gunakan skrip di popup.',
+        msg: 'Popup tidak terbuka. Pastikan pop-up diizinkan untuk master.bkd.jatimprov.go.id',
       };
     }
 
     // Tunggu popup DOM siap
-    await waitMs(1000);
+    await waitMs(1500);
 
     try {
       const popupDoc = popupWin.document;
-      if (!popupDoc) {
+      if (!popupDoc || !popupDoc.body) {
         return { ok: false, msg: 'Tidak bisa akses konten popup (cross-origin?)' };
       }
 
-      // Cari kolom pencarian di popup
+      // Tunggu sampai halaman popup benar-benar loaded
+      if (popupDoc.readyState !== 'complete') {
+        await new Promise((resolve) => {
+          popupWin.addEventListener('load', resolve);
+          setTimeout(resolve, 3000);
+        });
+      }
+
+      // ---- STEP 1: Cari input pencarian "Aktifitas:" ----
       const searchInput =
+        popupDoc.querySelector('input[name*="aktifitas" i]') ||
+        popupDoc.querySelector('input[name*="aktivitas" i]') ||
+        popupDoc.querySelector('input[name*="search" i]') ||
+        popupDoc.querySelector('input[name*="cari" i]') ||
+        popupDoc.querySelector('input[name*="keyword" i]') ||
         popupDoc.querySelector('input[type="text"]') ||
-        popupDoc.querySelector('input[type="search"]') ||
-        popupDoc.querySelector('input[name*="cari"]') ||
-        popupDoc.querySelector('input[name*="search"]') ||
-        popupDoc.querySelector('input[name*="keyword"]') ||
-        popupDoc.querySelector('input[name*="kata"]') ||
-        popupDoc.querySelector('input[placeholder*="cari"]') ||
-        popupDoc.querySelector('input[placeholder*="search"]') ||
         popupDoc.querySelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"])');
 
       if (!searchInput) {
         popupWin.close();
-        return { ok: false, msg: 'Kolom pencarian di popup tidak ditemukan' };
+        return { ok: false, msg: 'Kolom pencarian "Aktifitas" di popup tidak ditemukan' };
       }
 
       // Isi kata kunci
@@ -323,64 +335,96 @@
       searchInput.dispatchEvent(new Event('change', { bubbles: true }));
       await waitMs(300);
 
-      // Klik tombol cari/search
-      const searchBtn =
-        popupDoc.querySelector('input[type="submit"]') ||
-        popupDoc.querySelector('button[type="submit"]') ||
-        [...popupDoc.querySelectorAll('input[type="button"], button')].find(
-          (b) => {
-            const t = (b.value || b.textContent || '').toLowerCase();
-            return t.includes('cari') || t.includes('search') || t.includes('find');
-          }
-        );
+      // ---- STEP 2: Klik tombol "Cari" ----
+      const allBtns = [
+        ...popupDoc.querySelectorAll('input[type="submit"], input[type="button"], button'),
+      ];
+      const cariBtn =
+        allBtns.find((b) => (b.value || b.textContent || '').trim().toLowerCase() === 'cari') ||
+        allBtns.find((b) => {
+          const t = (b.value || b.textContent || '').trim().toLowerCase();
+          return t.includes('cari') || t.includes('search') || t.includes('find');
+        }) ||
+        popupDoc.querySelector('input[type="submit"]');
 
-      if (searchBtn) {
-        searchBtn.click();
+      if (cariBtn) {
+        cariBtn.click();
       } else {
-        // Fallback: submit form
         const form = searchInput.closest('form');
-        if (form) form.submit();
+        if (form) {
+          form.submit();
+        } else {
+          searchInput.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true })
+          );
+        }
       }
 
-      // Tunggu hasil muncul
-      await waitMs(1500);
+      // ---- STEP 3: Tunggu hasil tabel muncul ----
+      await waitMs(2000);
 
-      // Klik hasil pertama — biasanya link <a> atau <tr> di tabel hasil
-      const resultLink =
-        popupDoc.querySelector('table a') ||
-        popupDoc.querySelector('a[href*="javascript"]') ||
-        popupDoc.querySelector('td a') ||
-        popupDoc.querySelector('.result a') ||
-        popupDoc.querySelector('a');
+      // ---- STEP 4: Klik baris hasil pertama ----
+      // Tabel "Kamus Aktifitas Harian" punya header di baris pertama
+      // Hasil data mulai dari baris ke-2 dst
+      const rows = popupDoc.querySelectorAll('table tr');
+      let clicked = false;
 
-      // Juga coba cari baris tabel yang bisa diklik
-      const resultRow =
-        popupDoc.querySelector('table tbody tr[onclick]') ||
-        popupDoc.querySelector('table tr[onclick]') ||
-        popupDoc.querySelector('table tbody tr:nth-child(2)');
+      // Cari baris data (skip header)
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 2) {
+          // Cek apakah baris ini punya onclick
+          if (row.onclick || row.getAttribute('onclick')) {
+            row.click();
+            clicked = true;
+            break;
+          }
+          // Cek apakah ada link di dalam sel
+          const link = row.querySelector('a');
+          if (link) {
+            link.click();
+            clicked = true;
+            break;
+          }
+          // Cek apakah sel sendiri punya onclick
+          for (const cell of cells) {
+            if (cell.onclick || cell.getAttribute('onclick')) {
+              cell.click();
+              clicked = true;
+              break;
+            }
+            const cellLink = cell.querySelector('a');
+            if (cellLink) {
+              cellLink.click();
+              clicked = true;
+              break;
+            }
+          }
+          if (clicked) break;
+          // Last resort: klik baris langsung
+          row.click();
+          clicked = true;
+          break;
+        }
+      }
 
-      if (resultLink && resultLink.href?.includes('javascript')) {
-        resultLink.click();
+      if (clicked) {
         await waitMs(500);
-        return { ok: true, msg: `Detail Aktifitas diisi via popup (kata kunci: "${kataKunci}")` };
-      } else if (resultRow) {
-        resultRow.click();
-        await waitMs(500);
-        return { ok: true, msg: `Detail Aktifitas diisi via popup (kata kunci: "${kataKunci}")` };
-      } else if (resultLink) {
-        resultLink.click();
-        await waitMs(500);
-        return { ok: true, msg: `Detail Aktifitas diisi via popup (kata kunci: "${kataKunci}")` };
-      } else {
         return {
-          ok: false,
-          msg: `Tidak ada hasil untuk kata kunci "${kataKunci}" di popup. Coba kata kunci lain.`,
+          ok: true,
+          msg: `Detail Aktifitas diisi via popup (kata kunci: "${kataKunci}")`,
         };
       }
+
+      return {
+        ok: false,
+        msg: `Tidak ada hasil untuk kata kunci "${kataKunci}". Coba kata kunci lain.`,
+      };
     } catch (e) {
       return {
         ok: false,
-        msg: `Error saat mengakses popup: ${e.message}. Mungkin cross-origin — isi Detail Aktifitas secara manual.`,
+        msg: `Error popup: ${e.message}. Isi Detail Aktifitas manual, lalu klik "Isi Form" untuk field lainnya.`,
       };
     }
   }
